@@ -6,7 +6,7 @@
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <LangVersion>12.0</LangVersion>
     <NoWarn>$(NoWarn);CA1707;CA1822;CA1848;CA1859;CA1869</NoWarn>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Company>EULE</Company>
     <Product>EULE Outlook MCP</Product>
     <Copyright>Copyright © EULE</Copyright>

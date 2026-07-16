@@ -24,7 +24,31 @@ public static class InputValidator
             throw new OutlookMcpException(ErrorCodes.InvalidArgument, "sort_order must be newest_first or oldest_first.", "Use a supported sort order.");
         }
 
+        if (request.QueryMode is not ("all_terms" or "phrase"))
+        {
+            throw new OutlookMcpException(ErrorCodes.InvalidArgument, "query_mode must be all_terms or phrase.", "Use a supported query mode.");
+        }
+
         return request;
+    }
+
+    public static void ValidateBatch(IReadOnlyList<string> messageIds, int maximumBatchSize)
+    {
+        if (messageIds.Count < 1 || messageIds.Count > maximumBatchSize)
+        {
+            throw new OutlookMcpException(ErrorCodes.ResultLimitExceeded, $"message_ids must contain between 1 and {maximumBatchSize} items.", "Reduce the batch size and retry.");
+        }
+
+        if (messageIds.Any(string.IsNullOrWhiteSpace)) throw Invalid("message_ids cannot contain empty values.");
+        if (messageIds.Distinct(StringComparer.Ordinal).Count() != messageIds.Count) throw Invalid("message_ids cannot contain duplicates.");
+    }
+
+    public static void ValidateFolderName(string displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName)) throw Invalid("display_name is required.");
+        if (displayName.Length > 255) throw Invalid("display_name must not exceed 255 characters.");
+        if (displayName.IndexOfAny(['\\', '\r', '\n', '\0']) >= 0) throw Invalid("display_name contains an unsupported character.");
+        if (!string.Equals(displayName, displayName.Trim(), StringComparison.Ordinal)) throw Invalid("display_name cannot start or end with whitespace.");
     }
 
     public static void ValidateBodyFormat(string bodyFormat)
@@ -49,4 +73,6 @@ public static class InputValidator
             }
         }
     }
+
+    private static OutlookMcpException Invalid(string message) => new(ErrorCodes.InvalidArgument, message, "Correct the request parameters and retry.");
 }

@@ -167,6 +167,37 @@ public sealed class OutlookGateway : IOutlookGateway
         return result;
     }, cancellationToken);
 
+    public Task<IReadOnlyList<FolderDto>> FindFoldersAsync(FindFoldersRequest request, CancellationToken cancellationToken) => ExecuteAsync<IReadOnlyList<FolderDto>>("outlook_find_folders", () =>
+    {
+        if (string.IsNullOrWhiteSpace(request.Query)) throw Invalid("query is required.");
+        if (request.MaxResults is < 1 or > 100) throw Invalid("max_results must be between 1 and 100.");
+        _session.EnsureConnected();
+        var matches = new List<(FolderDto Folder, int Score)>();
+        var scanned = 0;
+        foreach (var storeInfo in ListStoresCore(request.StoreId))
+        {
+            dynamic? store = null;
+            dynamic? root = null;
+            try
+            {
+                store = _session.Namespace.Stores[storeInfo.Index];
+                root = store.GetRootFolder();
+                FindMatchingFolders(root, request.Query.Trim(), request.IncludeHidden, matches, ref scanned);
+            }
+            finally
+            {
+                ComReleaseHelper.FinalRelease(root);
+                ComReleaseHelper.FinalRelease(store);
+            }
+        }
+
+        return matches.OrderBy(value => value.Score)
+            .ThenBy(value => value.Folder.FullPath, StringComparer.CurrentCultureIgnoreCase)
+            .Take(request.MaxResults)
+            .Select(value => value.Folder)
+            .ToArray();
+    }, cancellationToken);
+
     public Task<SearchResultDto> SearchEmailsAsync(SearchEmailsRequest request, CancellationToken cancellationToken) => ExecuteAsync("outlook_search_emails", () =>
     {
         InputValidator.Validate(request, _options);
@@ -187,6 +218,41 @@ public sealed class OutlookGateway : IOutlookGateway
             return BuildDetail((object)item, request.BodyFormat, request.MaxBodyCharacters, request.IncludeAttachmentMetadata);
         }
         finally { ComReleaseHelper.FinalRelease(item); }
+    }, cancellationToken);
+
+    public Task<BatchReadResultDto> ReadEmailsBatchAsync(ReadEmailsBatchRequest request, CancellationToken cancellationToken) => ExecuteAsync("outlook_read_emails_batch", () =>
+    {
+        InputValidator.ValidateBatch(request.MessageIds, _options.MaximumBatchSize);
+        InputValidator.ValidateBodyFormat(request.BodyFormat);
+        if (request.MaxBodyCharacters is < 1 or > 100_000) throw Invalid("max_body_characters must be between 1 and 100000 for batch reads.");
+        if (request.BodyFormat is "html" or "both" && !_options.AllowHtmlBody) throw Invalid("HTML body access is disabled in configuration.");
+        _session.EnsureConnected();
+        var results = new List<BatchEmailResultDto>(request.MessageIds.Count);
+        foreach (var messageId in request.MessageIds)
+        {
+            dynamic? item = null;
+            try
+            {
+                item = GetMailItem(messageId, request.StoreId);
+                var detail = BuildDetail((object)item, request.BodyFormat, request.MaxBodyCharacters, request.IncludeAttachmentMetadata);
+                results.Add(new BatchEmailResultDto(messageId, true, detail, null));
+            }
+            catch (OutlookMcpException ex)
+            {
+                if (!request.ContinueOnError) throw;
+                results.Add(new BatchEmailResultDto(messageId, false, null, ex.ToError(_loggingOptions.IncludeTechnicalDetails)));
+            }
+            catch (Exception ex) when (ex is COMException or RuntimeBinderException)
+            {
+                var wrapped = new OutlookMcpException(ErrorCodes.ComOperationFailed, "Outlook could not read one email in the batch.", "Search for the message again and retry that item.", ex);
+                if (!request.ContinueOnError) throw wrapped;
+                results.Add(new BatchEmailResultDto(messageId, false, null, wrapped.ToError(_loggingOptions.IncludeTechnicalDetails)));
+            }
+            finally { ComReleaseHelper.FinalRelease(item); }
+        }
+
+        var succeeded = results.Count(value => value.Success);
+        return new BatchReadResultDto(results, request.MessageIds.Count, succeeded, results.Count - succeeded);
     }, cancellationToken);
 
     public Task<ThreadDto> ReadThreadAsync(ReadThreadRequest request, CancellationToken cancellationToken) => ExecuteAsync("outlook_read_thread", () =>
@@ -445,18 +511,137 @@ public sealed class OutlookGateway : IOutlookGateway
         }
     }, cancellationToken);
 
+    public Task<FolderDto> CreateFolderAsync(CreateFolderRequest request, CancellationToken cancellationToken) => ExecuteAsync("outlook_create_folder", () =>
+    {
+        InputValidator.ValidateFolderName(request.DisplayName);
+        _session.EnsureConnected();
+        dynamic? parent = null;
+        dynamic? folders = null;
+        dynamic? created = null;
+        try
+        {
+            parent = string.IsNullOrWhiteSpace(request.ParentFolderId)
+                ? GetStoreRootFolder(request.StoreId)
+                : GetFolder(request.ParentFolderId, request.StoreId);
+            if (!string.IsNullOrWhiteSpace(request.ParentFolderId) && SafeInt(() => parent.DefaultItemType) != 0) throw Invalid("parent_folder_id must reference a mail folder.");
+
+            folders = parent.Folders;
+            for (var index = 1; index <= (int)folders.Count; index++)
+            {
+                dynamic? child = null;
+                try
+                {
+                    child = folders[index];
+                    if (string.Equals(SafeString(() => child.Name), request.DisplayName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new OutlookMcpException(ErrorCodes.FolderAlreadyExists, "A folder with that name already exists below the selected parent.", "Use the existing folder or choose a different display_name.");
+                    }
+                }
+                finally { ComReleaseHelper.FinalRelease(child); }
+            }
+
+            created = folders.Add(request.DisplayName);
+            var result = BuildFolder((object)created);
+            _logger.LogInformation("Created Outlook folder {FolderPath} in store {StoreId}", result.FullPath, HashId(result.StoreId));
+            return result;
+        }
+        finally
+        {
+            ComReleaseHelper.FinalRelease(created);
+            ComReleaseHelper.FinalRelease(folders);
+            ComReleaseHelper.FinalRelease(parent);
+        }
+    }, cancellationToken);
+
+    public Task<MoveEmailsResultDto> MoveEmailsAsync(MoveEmailsRequest request, CancellationToken cancellationToken) => ExecuteAsync("outlook_move_emails", () =>
+    {
+        InputValidator.ValidateBatch(request.MessageIds, _options.MaximumBatchSize);
+        _session.EnsureConnected();
+        dynamic? destination = null;
+        try
+        {
+            destination = GetFolder(request.DestinationFolderId, request.StoreId);
+            if (SafeInt(() => destination.DefaultItemType) != 0) throw Invalid("destination_folder_id must reference a mail folder.");
+            var destinationDto = BuildFolder((object)destination);
+            var results = new List<MoveEmailResultDto>(request.MessageIds.Count);
+            foreach (var messageId in request.MessageIds)
+            {
+                dynamic? source = null;
+                dynamic? moved = null;
+                dynamic? parent = null;
+                try
+                {
+                    source = GetMailItem(messageId, request.StoreId);
+                    parent = source.Parent;
+                    var sourceFolderId = SafeString(() => parent.EntryID);
+                    var sourceFolderPath = SafeString(() => parent.FolderPath);
+                    var subject = SafeString(() => source.Subject);
+                    var alreadyThere = string.Equals(sourceFolderId, destinationDto.FolderId, StringComparison.Ordinal);
+                    if (request.DryRun || alreadyThere)
+                    {
+                        results.Add(new MoveEmailResultDto(messageId, true, false, messageId, request.StoreId, subject, sourceFolderId, sourceFolderPath, null));
+                        continue;
+                    }
+
+                    moved = source.Move(destination);
+                    var movedStoreId = StoreIdForItem((object)moved);
+                    dynamic? movedParent = null;
+                    try
+                    {
+                        movedParent = moved.Parent;
+                        var movedId = MessageReferenceCodec.Encode(new OutlookItemReference((string)moved.EntryID, movedStoreId));
+                        results.Add(new MoveEmailResultDto(messageId, true, true, movedId, movedStoreId, SafeString(() => moved.Subject),
+                            SafeString(() => movedParent.EntryID), SafeString(() => movedParent.FolderPath), null));
+                    }
+                    finally { ComReleaseHelper.FinalRelease(movedParent); }
+                }
+                catch (OutlookMcpException ex)
+                {
+                    if (!request.ContinueOnError) throw;
+                    results.Add(new MoveEmailResultDto(messageId, false, false, null, request.StoreId, null, null, null, ex.ToError(_loggingOptions.IncludeTechnicalDetails)));
+                }
+                catch (Exception ex) when (ex is COMException or RuntimeBinderException)
+                {
+                    var wrapped = new OutlookMcpException(ErrorCodes.ComOperationFailed, "Outlook could not move one email in the batch.", "Search for the message again and retry that item.", ex);
+                    if (!request.ContinueOnError) throw wrapped;
+                    results.Add(new MoveEmailResultDto(messageId, false, false, null, request.StoreId, null, null, null, wrapped.ToError(_loggingOptions.IncludeTechnicalDetails)));
+                }
+                finally
+                {
+                    ComReleaseHelper.FinalRelease(parent);
+                    ComReleaseHelper.FinalRelease(moved);
+                    ComReleaseHelper.FinalRelease(source);
+                }
+            }
+
+            var succeeded = results.Count(value => value.Success);
+            _logger.LogInformation("Outlook move batch completed; Requested={RequestedCount}, Succeeded={SucceededCount}, DryRun={DryRun}", request.MessageIds.Count, succeeded, request.DryRun);
+            return new MoveEmailsResultDto(destinationDto, request.DryRun, results, request.MessageIds.Count, succeeded, results.Count - succeeded);
+        }
+        finally { ComReleaseHelper.FinalRelease(destination); }
+    }, cancellationToken);
+
     private SearchResultDto SearchCore(SearchEmailsRequest request)
     {
         var folders = ResolveSearchFolders(request);
         var results = new List<EmailSummaryDto>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var maximumScanned = Math.Min(5_000, Math.Max(250, request.MaxResults * 40));
+        var maximumScanned = Math.Min(5_000, Math.Max(250, Math.Max(request.MaxResults * 40, folders.Count * request.MaxResults)));
         var scanned = 0;
+        var searchedFolders = 0;
+        var scanTruncated = false;
         try
         {
-            foreach (var folder in folders)
+            for (var folderIndex = 0; folderIndex < folders.Count; folderIndex++)
             {
-                if (results.Count >= request.MaxResults || scanned >= maximumScanned) break;
+                if (scanned >= maximumScanned)
+                {
+                    scanTruncated = true;
+                    break;
+                }
+
+                var folder = folders[folderIndex];
+                searchedFolders++;
                 dynamic? items = null;
                 dynamic? restricted = null;
                 try
@@ -465,8 +650,13 @@ public sealed class OutlookGateway : IOutlookGateway
                     var filter = BuildRestrictFilter(request);
                     restricted = string.IsNullOrEmpty(filter) ? items : items.Restrict(filter);
                     restricted.Sort("[ReceivedTime]", request.SortOrder == "newest_first");
-                    var count = Math.Min((int)restricted.Count, maximumScanned - scanned);
-                    for (var index = 1; index <= count && results.Count < request.MaxResults; index++)
+                    var remainingFolders = folders.Count - folderIndex;
+                    var remainingBudget = maximumScanned - scanned;
+                    var folderBudget = Math.Max(1, remainingBudget / remainingFolders);
+                    var restrictedCount = (int)restricted.Count;
+                    var count = Math.Min(restrictedCount, folderBudget);
+                    if (restrictedCount > count) scanTruncated = true;
+                    for (var index = 1; index <= count; index++)
                     {
                         dynamic? item = null;
                         try
@@ -477,6 +667,17 @@ public sealed class OutlookGateway : IOutlookGateway
                             var storeId = StoreIdForItem((object)item);
                             var entryId = SafeString(() => item.EntryID);
                             if (entryId is null || !seen.Add(entryId + "|" + storeId)) continue;
+                            if (results.Count >= request.MaxResults)
+                            {
+                                var timestamp = ItemTimestamp((object)item);
+                                var leastUsefulIndex = request.SortOrder == "newest_first"
+                                    ? results.Select((value, resultIndex) => (value.Timestamp, resultIndex)).MinBy(value => value.Timestamp).resultIndex
+                                    : results.Select((value, resultIndex) => (value.Timestamp, resultIndex)).MaxBy(value => value.Timestamp).resultIndex;
+                                var leastUseful = results[leastUsefulIndex];
+                                var shouldReplace = request.SortOrder == "newest_first" ? timestamp > leastUseful.Timestamp : timestamp < leastUseful.Timestamp;
+                                if (!shouldReplace) continue;
+                                results.RemoveAt(leastUsefulIndex);
+                            }
                             results.Add(BuildSummary((object)item, request.IncludeBodyPreview));
                         }
                         finally { ComReleaseHelper.FinalRelease(item); }
@@ -492,8 +693,10 @@ public sealed class OutlookGateway : IOutlookGateway
         finally { foreach (var folder in folders) ComReleaseHelper.FinalRelease(folder); }
 
         var sorted = request.SortOrder == "newest_first" ? results.OrderByDescending(value => value.Timestamp) : results.OrderBy(value => value.Timestamp);
-        var warning = scanned >= maximumScanned ? $"Search stopped after inspecting {maximumScanned} Outlook-filtered items. Narrow the query or date range for more complete results." : "Results are limited to folders currently synchronised in Outlook Classic.";
-        return new SearchResultDto(sorted.Take(request.MaxResults).ToArray(), true, warning);
+        var warning = scanTruncated
+            ? $"Search fairly sampled {scanned} Outlook-filtered items across {searchedFolders} folders and hit its scan budget. Narrow the query, date range, or folder scope for more complete results."
+            : "Results are limited to folders currently synchronised in Outlook Classic.";
+        return new SearchResultDto(sorted.Take(request.MaxResults).ToArray(), true, warning, searchedFolders, scanned, scanTruncated, ExternalWarning);
     }
 
     private List<dynamic> ResolveSearchFolders(SearchEmailsRequest request)
@@ -589,19 +792,29 @@ public sealed class OutlookGateway : IOutlookGateway
     private bool MatchesTextFilters(object itemObject, SearchEmailsRequest request)
     {
         dynamic item = itemObject;
+        if (request.HasAttachments is not null && (GetAttachments(itemObject, false).Count > 0) != request.HasAttachments.Value) return false;
+        if (!string.IsNullOrWhiteSpace(request.Sender))
+        {
+            var sender = (SafeString(() => item.SenderName) ?? string.Empty) + " " + (ResolveSenderEmail(item) ?? string.Empty);
+            if (!Contains(sender, request.Sender)) return false;
+        }
+        if (!string.IsNullOrWhiteSpace(request.Recipients))
+        {
+            var recipients = (SafeString(() => item.To) ?? string.Empty) + " " + (SafeString(() => item.CC) ?? string.Empty);
+            if (!Contains(recipients, request.Recipients)) return false;
+        }
+        if (!string.IsNullOrWhiteSpace(request.Subject) && !Contains(SafeString(() => item.Subject) ?? string.Empty, request.Subject)) return false;
+        if (string.IsNullOrWhiteSpace(request.Query)) return true;
+
         var subject = SafeString(() => item.Subject) ?? string.Empty;
         var senderName = SafeString(() => item.SenderName) ?? string.Empty;
         var senderEmail = ResolveSenderEmail(item) ?? string.Empty;
         var to = SafeString(() => item.To) ?? string.Empty;
         var cc = SafeString(() => item.CC) ?? string.Empty;
         var body = SafeString(() => item.Body) ?? string.Empty;
-        if (request.HasAttachments is not null && (GetAttachments(itemObject, false).Count > 0) != request.HasAttachments.Value) return false;
-        if (!Contains(senderName + " " + senderEmail, request.Sender)) return false;
-        if (!Contains(to + " " + cc, request.Recipients)) return false;
-        if (!Contains(subject, request.Subject)) return false;
-        if (string.IsNullOrWhiteSpace(request.Query)) return true;
-        if (Contains(subject + " " + senderName + " " + senderEmail + " " + to + " " + cc + " " + body, request.Query)) return true;
-        return GetAttachments(itemObject, false).Any(value => Contains(value.Filename, request.Query));
+        var attachments = GetAttachments(itemObject, false);
+        var searchable = string.Join(' ', subject, senderName, senderEmail, to, cc, body, string.Join(' ', attachments.Select(value => value.Filename)));
+        return TextSearchMatcher.Matches(searchable, request.Query, request.QueryMode);
     }
 
     private static bool Contains(string source, string? term) => string.IsNullOrWhiteSpace(term) || source.Contains(term, StringComparison.CurrentCultureIgnoreCase);
@@ -617,7 +830,7 @@ public sealed class OutlookGateway : IOutlookGateway
         try
         {
             parent = item.Parent;
-            return new EmailSummaryDto(MessageReferenceCodec.Encode(new OutlookItemReference(entryId, storeId)), storeId, SafeString(() => parent.EntryID) ?? string.Empty, SafeString(() => item.Subject) ?? string.Empty, SafeString(() => item.SenderName), ResolveSenderEmail(item), RecipientSummary(item), ItemTimestamp(itemObject), SafeString(() => parent.FolderPath) ?? string.Empty, SafeBool(() => item.UnRead), attachments.Count, attachments.Select(value => value.Filename).ToArray(), preview, SafeString(() => item.ConversationTopic), SafeString(() => item.ConversationID), ExternalWarning);
+            return new EmailSummaryDto(MessageReferenceCodec.Encode(new OutlookItemReference(entryId, storeId)), storeId, SafeString(() => parent.EntryID) ?? string.Empty, SafeString(() => item.Subject) ?? string.Empty, SafeString(() => item.SenderName), ResolveSenderEmail(item), RecipientSummary(item), ItemTimestamp(itemObject), SafeString(() => parent.FolderPath) ?? string.Empty, SafeBool(() => item.UnRead), attachments.Count, attachments.Select(value => value.Filename).ToArray(), preview, SafeString(() => item.ConversationTopic), SafeString(() => item.ConversationID), null);
         }
         finally { ComReleaseHelper.FinalRelease(parent); }
     }
@@ -762,8 +975,7 @@ public sealed class OutlookGateway : IOutlookGateway
 
     private dynamic GetMailItem(string messageId, string storeId)
     {
-        var reference = MessageReferenceCodec.Decode(messageId);
-        if (!string.Equals(reference.StoreId, storeId, StringComparison.Ordinal)) throw Invalid("message_id and store_id refer to different Outlook stores.");
+        var reference = MessageReferenceCodec.Decode(messageId, storeId);
         if (!IsStoreAllowed(storeId, null)) throw new OutlookMcpException(ErrorCodes.StoreNotFound, "The requested store is not allowed or is unavailable.", "List stores and use an allowed store_id.");
         try
         {
@@ -805,6 +1017,40 @@ public sealed class OutlookGateway : IOutlookGateway
         catch (COMException ex) { throw new OutlookMcpException(ErrorCodes.FolderNotFound, "Outlook could not find the requested folder.", "List folders again and use a current folder_id.", ex); }
     }
 
+    private dynamic GetStoreRootFolder(string storeId)
+    {
+        var storeInfo = ListStoresCore(storeId).Single();
+        dynamic? store = null;
+        dynamic? root = null;
+        try
+        {
+            store = _session.Namespace.Stores[storeInfo.Index];
+            root = store.GetRootFolder();
+            var result = root;
+            root = null;
+            return result;
+        }
+        finally
+        {
+            ComReleaseHelper.FinalRelease(root);
+            ComReleaseHelper.FinalRelease(store);
+        }
+    }
+
+    private FolderDto BuildFolder(object folderObject)
+    {
+        dynamic folder = folderObject;
+        dynamic? children = null;
+        try
+        {
+            children = folder.Folders;
+            return new FolderDto((string)folder.EntryID, (string)folder.StoreID, SafeString(() => folder.Name) ?? string.Empty,
+                SafeString(() => folder.FolderPath) ?? string.Empty, FolderTypeName(SafeInt(() => folder.DefaultItemType)),
+                SafeNullableInt(() => folder.UnReadItemCount), GetFolderItemCount(folder), SafeInt(() => folder.DefaultItemType) == 0, (int)children.Count);
+        }
+        finally { ComReleaseHelper.FinalRelease(children); }
+    }
+
     private void EnumerateChildFolders(dynamic parent, bool recursive, int maximumDepth, bool includeHidden, List<FolderDto> result, int depth = 0)
     {
         if (result.Count >= _options.MaximumRecursiveFolders || depth > maximumDepth) return;
@@ -836,6 +1082,45 @@ public sealed class OutlookGateway : IOutlookGateway
             }
         }
         finally { ComReleaseHelper.FinalRelease(folders); }
+    }
+
+    private void FindMatchingFolders(dynamic parent, string query, bool includeHidden, List<(FolderDto Folder, int Score)> result, ref int scanned, int depth = 0)
+    {
+        if (scanned >= _options.MaximumRecursiveFolders || depth > 20) return;
+        dynamic? folders = null;
+        try
+        {
+            folders = parent.Folders;
+            for (var index = 1; index <= (int)folders.Count && scanned < _options.MaximumRecursiveFolders; index++)
+            {
+                dynamic? folder = null;
+                try
+                {
+                    folder = folders[index];
+                    scanned++;
+                    var path = SafeString(() => folder.FolderPath) ?? string.Empty;
+                    if (!IsFolderAllowed(path)) continue;
+                    var hiddenProperty = GetProperty(folder, "http://schemas.microsoft.com/mapi/proptag/0x10F4000B") as string;
+                    var hidden = bool.TryParse(hiddenProperty, out var hiddenValue) && hiddenValue;
+                    if (hidden && !includeHidden) continue;
+                    var name = SafeString(() => folder.Name) ?? string.Empty;
+                    var score = FolderMatchScore(name, path, query);
+                    if (score is not null) result.Add((BuildFolder((object)folder), score.Value));
+                    FindMatchingFolders(folder, query, includeHidden, result, ref scanned, depth + 1);
+                }
+                finally { ComReleaseHelper.FinalRelease(folder); }
+            }
+        }
+        finally { ComReleaseHelper.FinalRelease(folders); }
+    }
+
+    private static int? FolderMatchScore(string name, string path, string query)
+    {
+        if (string.Equals(name, query, StringComparison.OrdinalIgnoreCase)) return 0;
+        if (string.Equals(path, query, StringComparison.OrdinalIgnoreCase) || path.EndsWith("\\" + query, StringComparison.OrdinalIgnoreCase)) return 1;
+        if (name.StartsWith(query, StringComparison.OrdinalIgnoreCase)) return 2;
+        if (name.Contains(query, StringComparison.OrdinalIgnoreCase) || path.Contains(query, StringComparison.OrdinalIgnoreCase)) return 3;
+        return null;
     }
 
     private IReadOnlyList<(int Index, string StoreId)> ListStoresCore(string? requestedStoreId)

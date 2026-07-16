@@ -21,6 +21,7 @@ public sealed class OutlookOptions
     public List<string> AllowedAttachmentDirectories { get; set; } = ["%USERPROFILE%\\Downloads\\Outlook AI"];
     public bool AllowSelectedEmailAccess { get; set; } = true;
     public int MaximumRecursiveFolders { get; set; } = 1_000;
+    public int MaximumBatchSize { get; set; } = 100;
 }
 
 public sealed class LoggingOptions

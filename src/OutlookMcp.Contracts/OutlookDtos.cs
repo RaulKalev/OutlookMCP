@@ -62,12 +62,16 @@ public sealed record EmailSummaryDto(
     [property: JsonPropertyName("body_preview")] string? BodyPreview,
     [property: JsonPropertyName("conversation_topic")] string? ConversationTopic,
     [property: JsonPropertyName("conversation_id")] string? ConversationId,
-    [property: JsonPropertyName("external_content_warning")] string ExternalContentWarning);
+    [property: JsonPropertyName("external_content_warning"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExternalContentWarning);
 
 public sealed record SearchResultDto(
     [property: JsonPropertyName("messages")] IReadOnlyList<EmailSummaryDto> Messages,
     [property: JsonPropertyName("may_be_incomplete")] bool MayBeIncomplete,
-    [property: JsonPropertyName("scope_warning")] string? ScopeWarning);
+    [property: JsonPropertyName("scope_warning")] string? ScopeWarning,
+    [property: JsonPropertyName("searched_folder_count")] int SearchedFolderCount,
+    [property: JsonPropertyName("scanned_item_count")] int ScannedItemCount,
+    [property: JsonPropertyName("scan_truncated")] bool ScanTruncated,
+    [property: JsonPropertyName("external_content_warning")] string ExternalContentWarning);
 
 public sealed record EmailDetailDto(
     [property: JsonPropertyName("message_id")] string MessageId,
@@ -144,6 +148,37 @@ public sealed record SavedAttachmentDto(
     [property: JsonPropertyName("filename")] string Filename,
     [property: JsonPropertyName("size")] long Size,
     [property: JsonPropertyName("warning")] string Warning);
+
+public sealed record BatchEmailResultDto(
+    [property: JsonPropertyName("source_message_id")] string SourceMessageId,
+    [property: JsonPropertyName("success")] bool Success,
+    [property: JsonPropertyName("email")] EmailDetailDto? Email,
+    [property: JsonPropertyName("error")] ErrorDto? Error);
+
+public sealed record BatchReadResultDto(
+    [property: JsonPropertyName("items")] IReadOnlyList<BatchEmailResultDto> Items,
+    [property: JsonPropertyName("requested_count")] int RequestedCount,
+    [property: JsonPropertyName("succeeded_count")] int SucceededCount,
+    [property: JsonPropertyName("failed_count")] int FailedCount);
+
+public sealed record MoveEmailResultDto(
+    [property: JsonPropertyName("source_message_id")] string SourceMessageId,
+    [property: JsonPropertyName("success")] bool Success,
+    [property: JsonPropertyName("moved")] bool Moved,
+    [property: JsonPropertyName("message_id")] string? MessageId,
+    [property: JsonPropertyName("store_id")] string StoreId,
+    [property: JsonPropertyName("subject")] string? Subject,
+    [property: JsonPropertyName("folder_id")] string? FolderId,
+    [property: JsonPropertyName("folder_path")] string? FolderPath,
+    [property: JsonPropertyName("error")] ErrorDto? Error);
+
+public sealed record MoveEmailsResultDto(
+    [property: JsonPropertyName("destination_folder")] FolderDto DestinationFolder,
+    [property: JsonPropertyName("dry_run")] bool DryRun,
+    [property: JsonPropertyName("items")] IReadOnlyList<MoveEmailResultDto> Items,
+    [property: JsonPropertyName("requested_count")] int RequestedCount,
+    [property: JsonPropertyName("succeeded_count")] int SucceededCount,
+    [property: JsonPropertyName("failed_count")] int FailedCount);
 
 public sealed record OutlookDiagnosticDto(
     [property: JsonPropertyName("draft_folder_accessible")] bool DraftFolderAccessible,

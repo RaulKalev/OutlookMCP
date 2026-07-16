@@ -13,6 +13,7 @@ public static class OutlookMcpOptionsValidator
         if (options.Outlook.DefaultBodyCharacterLimit is < 1 or > 500_000) throw Invalid("Outlook.DefaultBodyCharacterLimit must be between 1 and 500000.");
         if (options.Outlook.OperationTimeoutSeconds is < 1 or > 300) throw Invalid("Outlook.OperationTimeoutSeconds must be between 1 and 300.");
         if (options.Outlook.MaximumRecursiveFolders is < 1 or > 10_000) throw Invalid("Outlook.MaximumRecursiveFolders must be between 1 and 10000.");
+        if (options.Outlook.MaximumBatchSize is < 1 or > 500) throw Invalid("Outlook.MaximumBatchSize must be between 1 and 500.");
         if (options.Outlook.AllowAttachmentSaving && options.Outlook.AllowedAttachmentDirectories.Count == 0) throw Invalid("At least one allowed attachment directory is required when attachment saving is enabled.");
         if (options.Logging.RetentionDays is < 1 or > 365) throw Invalid("Logging.RetentionDays must be between 1 and 365.");
         return options;

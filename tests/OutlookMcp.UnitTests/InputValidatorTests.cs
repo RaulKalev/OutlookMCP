@@ -44,4 +44,27 @@ public sealed class InputValidatorTests
     {
         Assert.Throws<OutlookMcpException>(() => InputValidator.ValidateRecipients("not an address"));
     }
+
+    [Fact]
+    public void ValidateSearch_RejectsUnknownQueryMode()
+    {
+        var request = new SearchEmailsRequest("test", QueryMode: "fuzzy");
+        Assert.Throws<OutlookMcpException>(() => InputValidator.Validate(request, _options));
+    }
+
+    [Fact]
+    public void ValidateBatch_RejectsDuplicatesAndOversizedRequests()
+    {
+        Assert.Throws<OutlookMcpException>(() => InputValidator.ValidateBatch(["one", "one"], 10));
+        Assert.Throws<OutlookMcpException>(() => InputValidator.ValidateBatch(["one", "two"], 1));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("Nested\\Folder")]
+    [InlineData(" trailing ")]
+    public void ValidateFolderName_RejectsAmbiguousNames(string value)
+    {
+        Assert.Throws<OutlookMcpException>(() => InputValidator.ValidateFolderName(value));
+    }
 }

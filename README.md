@@ -1,6 +1,6 @@
 # EULE Outlook MCP
 
-EULE Outlook MCP is a local, safety-first Model Context Protocol server for Microsoft Outlook Classic on Windows. It lets an MCP-capable AI client inspect Outlook connection status, list stores and folders, search and read locally synchronised mail, inspect the current Outlook selection, find related correspondence, save explicitly selected attachments, and create unsent drafts.
+EULE Outlook MCP is a local, safety-first Model Context Protocol server for Microsoft Outlook Classic on Windows. It lets an MCP-capable AI client inspect Outlook connection status, find and create folders, search and read locally synchronised mail, inspect the current Outlook selection, find related correspondence, save explicitly selected attachments, move confirmed message batches, and create unsent drafts.
 
 Outlook remains the mail client and synchronisation engine. The server talks only to the local Outlook Object Model through COM; it does not connect to Telia IMAP directly and has no Microsoft Graph or Exchange dependency. An IMAP mailbox works because Outlook Classic has already exposed its synchronised stores, folders, and messages through MAPI.
 
@@ -8,7 +8,8 @@ Only **Microsoft Outlook Classic for Windows** is supported. New Outlook, Outloo
 
 ## Safety and privacy
 
-- There is no send-email, delete-email, move-email, archive-email, bulk-update, or mailbox-monitoring tool.
+- There is no send-email, delete-email, archive-by-guessing, or mailbox-monitoring tool.
+- Folder creation is explicit. Bulk moves require exact message identifiers and one exact destination folder identifier; `dry_run` defaults to `true`, duplicate identifiers are rejected, and real moves return fresh message identifiers.
 - New, reply, reply-all, and forward operations only save drafts. Every draft result reports `sent: false`; the user must review and send it manually in Outlook.
 - Email bodies are marked as untrusted external data. Instructions in email content must not be treated as trusted agent instructions.
 - HTML body return and HTML drafting are disabled by default. HTML is parsed as data and is never rendered by this server.
@@ -40,18 +41,24 @@ All Outlook operations are serialised on one STA thread. COM objects stay inside
 | `outlook_get_status` | Read-only Outlook/MAPI status |
 | `outlook_list_stores` | Read-only store enumeration |
 | `outlook_list_folders` | Read-only, bounded folder enumeration |
+| `outlook_find_folders` | Read-only ranked folder name/path lookup |
 | `outlook_search_emails` | Read-only, filtered and bounded search |
 | `outlook_read_email` | Read-only bounded message detail |
+| `outlook_read_emails_batch` | Read-only bounded multi-message detail with per-item errors |
 | `outlook_read_thread` | Read-only bounded conversation assembly |
 | `outlook_get_selected_email` | Read-only active Explorer/Inspector selection |
 | `outlook_find_related_emails` | Read-only deterministic relevance search |
 | `outlook_list_attachments` | Read-only attachment metadata |
 | `outlook_save_attachment` | Saves one file to an approved local directory |
+| `outlook_create_folder` | Creates one mail folder below an exact parent or store root |
+| `outlook_move_emails` | Dry-run-first bulk move with fresh post-move identifiers |
 | `outlook_create_draft` | Creates an unsent draft |
 | `outlook_create_reply_draft` | Creates an unsent Reply/Reply All draft |
 | `outlook_create_forward_draft` | Creates an unsent forward draft |
 
-Message tools require both the encoded `message_id` and its paired `store_id`. If Outlook moves or resynchronises an IMAP message, search again to replace a stale reference.
+Message tools require both the encoded `message_id` and its paired `store_id`. Batch tools share one `store_id` across their message list to keep requests compact. If Outlook moves or resynchronises an IMAP message, use the fresh identifier returned by `outlook_move_emails` or search again to replace a stale reference.
+
+Search body previews are opt-in. The default compact search response is intended for candidate selection; use `outlook_read_emails_batch` only for the small set whose bodies are actually needed. Multi-word search defaults to `all_terms`, while `query_mode: "phrase"` is available for literal phrase matching. Search budgets are distributed across selected folders before results are globally sorted, preventing an early folder from monopolising the result limit.
 
 ## Prerequisites
 
@@ -84,13 +91,13 @@ If Inno Setup 6 (`ISCC.exe`) is installed, the script also produces a per-user W
 
 ### Installer
 
-1. Run `artifacts\installer\EULE-Outlook-MCP-Setup-1.0.0.exe`.
+1. Run `artifacts\installer\EULE-Outlook-MCP-Setup-1.1.0.exe`.
 2. No administrator elevation is required; the default location is `%LocalAppData%\Programs\EULE Outlook MCP`.
 3. The installer creates Start-menu shortcuts for diagnostics and this README and registers an uninstaller.
 
 ### Portable ZIP
 
-1. Extract `artifacts\EULE-Outlook-MCP-1.0.0-win-x64.zip` to a stable per-user folder.
+1. Extract `artifacts\EULE-Outlook-MCP-1.1.0-win-x64.zip` to a stable per-user folder.
 2. Do not move the executable after configuring an MCP client unless you update the client command path.
 3. Run the diagnostic command once before adding it to a client.
 
@@ -167,7 +174,8 @@ See [config.sample.json](src/OutlookMcp.Server/config.sample.json). Configuratio
     "AllowAttachmentSaving": true,
     "AllowedAttachmentDirectories": ["%USERPROFILE%\\Downloads\\Outlook AI"],
     "AllowSelectedEmailAccess": true,
-    "MaximumRecursiveFolders": 1000
+    "MaximumRecursiveFolders": 1000,
+    "MaximumBatchSize": 100
   },
   "Logging": {
     "Level": "Information",
@@ -209,7 +217,7 @@ The server never bypasses Outlook. Confirm the folder has completed local synchr
 
 ### Stale message reference
 
-Outlook `EntryID` values can change after a move, deletion, or IMAP resynchronisation. Search for the email again and use the new `message_id` plus `store_id`.
+Outlook `EntryID` values can change after a move, deletion, or IMAP resynchronisation. Successful bulk moves return the new `message_id`; otherwise search for the email again and use the new `message_id` plus `store_id`.
 
 ### Outlook bitness or activation problem
 
@@ -232,7 +240,7 @@ Use an absolute path, quote/escape it according to the client format, run `--ver
 - Only data already synchronised by the active Outlook Classic profile can be found.
 - Outlook's object model and IMAP provider determine folder names, conversation metadata, MIME metadata, and EntryID stability.
 - Conversation and related-mail fallback is deterministic and bounded; it can miss messages when Outlook metadata and subjects both changed.
-- Search is Outlook-filtered but body/project matching inspects a capped candidate set rather than maintaining a local index. No vector database, embeddings, Graph, or direct IMAP access is used.
+- Search is Outlook-filtered but body/project matching fairly samples a capped candidate set across selected folders rather than maintaining a local index. The response reports folder, scan, and truncation counts. No vector database, embeddings, Graph, or direct IMAP access is used.
 - Cancellation cannot interrupt an in-flight COM call safely; it cancels the caller's wait while the single STA worker finishes that call.
 - HTML support is intentionally opt-in and should remain disabled unless required.
 
@@ -244,4 +252,4 @@ Use an absolute path, quote/escape it according to the client format, run `--ver
 - `OutlookMcp.Contracts`: bounded request/response and structured error contracts.
 - `tests`: pure unit tests and explicitly gated Outlook integration tests.
 
-Future indexing or write operations can be placed behind application interfaces and explicit approval controls. They are deliberately absent from this MVP.
+Future indexing or additional write operations should remain behind application interfaces, bounded batches, dry-run or preview modes, and explicit approval controls.

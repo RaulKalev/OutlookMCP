@@ -9,6 +9,7 @@ public static class ErrorCodes
     public const string MapiNotReady = "MAPI_NOT_READY";
     public const string StoreNotFound = "STORE_NOT_FOUND";
     public const string FolderNotFound = "FOLDER_NOT_FOUND";
+    public const string FolderAlreadyExists = "FOLDER_ALREADY_EXISTS";
     public const string MessageNotFound = "MESSAGE_NOT_FOUND";
     public const string StaleMessageReference = "STALE_MESSAGE_REFERENCE";
     public const string UnsupportedOutlookItem = "UNSUPPORTED_OUTLOOK_ITEM";

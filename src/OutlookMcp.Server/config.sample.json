@@ -12,7 +12,8 @@
     "AllowAttachmentSaving": true,
     "AllowedAttachmentDirectories": ["%USERPROFILE%\\Downloads\\Outlook AI"],
     "AllowSelectedEmailAccess": true,
-    "MaximumRecursiveFolders": 1000
+    "MaximumRecursiveFolders": 1000,
+    "MaximumBatchSize": 100
   },
   "Logging": {
     "Level": "Information",

@@ -22,6 +22,7 @@ public sealed class ErrorAndConfigurationTests
         Assert.Equal(100, options.Outlook.MaximumSearchLimit);
         Assert.False(options.Outlook.AllowHtmlBody);
         Assert.True(options.Outlook.AllowAttachmentSaving);
+        Assert.Equal(100, options.Outlook.MaximumBatchSize);
         Assert.False(options.Logging.IncludeTechnicalDetails);
         Assert.NotEmpty(options.Outlook.AllowedAttachmentDirectories);
     }
