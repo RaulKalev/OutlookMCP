@@ -15,6 +15,36 @@
     "MaximumRecursiveFolders": 1000,
     "MaximumBatchSize": 100
   },
+  "WritingStyle": {
+    "Enabled": true,
+    "DatabasePath": "%APPDATA%\\EULE\\OutlookMcp\\WritingStyle\\sent-email-index.db",
+    "ProfilePath": "%APPDATA%\\EULE\\OutlookMcp\\WritingStyle\\writing-profile.json",
+    "ProfileHistoryPath": "%APPDATA%\\EULE\\OutlookMcp\\WritingStyle\\writing-profile-history.json",
+    "ScanAllSentFolders": true,
+    "AllowedStores": [],
+    "BatchSize": 100,
+    "DelayBetweenBatchesMilliseconds": 100,
+    "SaveCheckpointAfterEachBatch": true,
+    "SyncBeforeDraftContext": true,
+    "MaximumRetrievedExamples": 5,
+    "MaximumCharactersPerExample": 3000,
+    "MaximumDraftContextCharacters": 30000,
+    "AllowFullAuthoredTextInResponses": false,
+    "StoreCleanBody": true,
+    "StoreQuotedText": true,
+    "StoreSignatureText": true,
+    "AdditionalSignatureMarkers": [],
+    "AdditionalDisclaimerMarkers": [],
+    "EnableFullTextSearch": true,
+    "ProfileRefreshRecommendationThreshold": 100,
+    "RecencyWeighting": {
+      "RecentMonths": 12,
+      "RecentWeight": 1.0,
+      "MiddleYears": 3,
+      "MiddleWeight": 0.8,
+      "OlderWeight": 0.6
+    }
+  },
   "Logging": {
     "Level": "Information",
     "RetentionDays": 14,

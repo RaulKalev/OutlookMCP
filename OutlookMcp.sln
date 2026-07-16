@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OutlookMcp.Application", "s
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OutlookMcp.OutlookInterop", "src\OutlookMcp.OutlookInterop\OutlookMcp.OutlookInterop.csproj", "{D127B709-86B8-4797-8559-C4552D029672}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OutlookMcp.Infrastructure", "src\OutlookMcp.Infrastructure\OutlookMcp.Infrastructure.csproj", "{79ACF391-322E-4C93-9D68-F0D6861B4737}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OutlookMcp.Server", "src\OutlookMcp.Server\OutlookMcp.Server.csproj", "{675A4699-2639-4720-8C6B-B6786322EC86}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OutlookMcp.UnitTests", "tests\OutlookMcp.UnitTests\OutlookMcp.UnitTests.csproj", "{A2C35C96-2105-4690-BC79-E5F3D68CF26E}"
@@ -33,6 +35,10 @@ Global
 		{D127B709-86B8-4797-8559-C4552D029672}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D127B709-86B8-4797-8559-C4552D029672}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D127B709-86B8-4797-8559-C4552D029672}.Release|Any CPU.Build.0 = Release|Any CPU
+		{79ACF391-322E-4C93-9D68-F0D6861B4737}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{79ACF391-322E-4C93-9D68-F0D6861B4737}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{79ACF391-322E-4C93-9D68-F0D6861B4737}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{79ACF391-322E-4C93-9D68-F0D6861B4737}.Release|Any CPU.Build.0 = Release|Any CPU
 		{675A4699-2639-4720-8C6B-B6786322EC86}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{675A4699-2639-4720-8C6B-B6786322EC86}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{675A4699-2639-4720-8C6B-B6786322EC86}.Release|Any CPU.ActiveCfg = Release|Any CPU

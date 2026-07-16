@@ -1,6 +1,6 @@
 # EULE Outlook MCP
 
-EULE Outlook MCP is a local, safety-first Model Context Protocol server for Microsoft Outlook Classic on Windows. It lets an MCP-capable AI client inspect Outlook connection status, find and create folders, search and read locally synchronised mail, inspect the current Outlook selection, find related correspondence, save explicitly selected attachments, move confirmed message batches, and create unsent drafts.
+EULE Outlook MCP is a local, safety-first Model Context Protocol server for Microsoft Outlook Classic on Windows. It lets an MCP-capable AI client inspect Outlook connection status, find and create folders, search and read locally synchronised mail, inspect the current Outlook selection, find related correspondence, build a private local writing-style index, save explicitly selected attachments, move confirmed message batches, and create unsent drafts.
 
 Outlook remains the mail client and synchronisation engine. The server talks only to the local Outlook Object Model through COM; it does not connect to Telia IMAP directly and has no Microsoft Graph or Exchange dependency. An IMAP mailbox works because Outlook Classic has already exposed its synchronised stores, folders, and messages through MAPI.
 
@@ -17,6 +17,7 @@ Only **Microsoft Outlook Classic for Windows** is supported. New Outlook, Outloo
 - Attachments are never opened, executed, uploaded, or extracted automatically. A single selected attachment can be saved only below an allow-listed directory. Path traversal, Windows device names, existing junctions/symlinks, and accidental overwrite are blocked.
 - Normal logs contain tool names, durations, bounded identifiers, counts, actions, and error codes—not full bodies, recipient lists, credentials, or attachment contents.
 - Email content is passed to the MCP client that invoked the tool. Review that AI provider's privacy and data-processing terms before use.
+- The writing-style SQLite database can contain sensitive sent-email text. It stays under the current Windows user profile and is never exposed over a network port. Only bounded datasets or relevant examples explicitly returned through MCP leave the server process.
 
 ## Architecture
 
@@ -55,6 +56,17 @@ All Outlook operations are serialised on one STA thread. COM objects stay inside
 | `outlook_create_draft` | Creates an unsent draft |
 | `outlook_create_reply_draft` | Creates an unsent Reply/Reply All draft |
 | `outlook_create_forward_draft` | Creates an unsent forward draft |
+| `outlook_style_get_scan_status` | Local index progress and quality, without bodies |
+| `outlook_style_scan_sent_emails` | Read-only resumable Sent-history indexing |
+| `outlook_style_sync_new_sent_emails` | Incremental new/modified Sent-item sync |
+| `outlook_style_prepare_profile_dataset` | Bounded representative data for profile synthesis |
+| `outlook_style_save_profile` | Validates and saves one unified local profile |
+| `outlook_style_get_profile` | Reads the current profile and refresh recommendation |
+| `outlook_style_update_profile` | Applies explicit profile corrections/overrides |
+| `outlook_style_list_profile_versions` | Lists archived profile metadata |
+| `outlook_style_restore_profile_version` | Restores an archived profile |
+| `outlook_style_find_examples` | Retrieves bounded relevant authored-text examples |
+| `outlook_style_prepare_draft_context` | Assembles profile, examples, rules, and safety notes |
 
 Message tools require both the encoded `message_id` and its paired `store_id`. Batch tools share one `store_id` across their message list to keep requests compact. If Outlook moves or resynchronises an IMAP message, use the fresh identifier returned by `outlook_move_emails` or search again to replace a stale reference.
 
@@ -91,13 +103,13 @@ If Inno Setup 6 (`ISCC.exe`) is installed, the script also produces a per-user W
 
 ### Installer
 
-1. Run `artifacts\installer\EULE-Outlook-MCP-Setup-1.1.0.exe`.
+1. Run `artifacts\installer\EULE-Outlook-MCP-Setup-1.2.0.exe`.
 2. No administrator elevation is required; the default location is `%LocalAppData%\Programs\EULE Outlook MCP`.
 3. The installer creates Start-menu shortcuts for diagnostics and this README and registers an uninstaller.
 
 ### Portable ZIP
 
-1. Extract `artifacts\EULE-Outlook-MCP-1.1.0-win-x64.zip` to a stable per-user folder.
+1. Extract `artifacts\EULE-Outlook-MCP-1.2.0-win-x64.zip` to a stable per-user folder.
 2. Do not move the executable after configuring an MCP client unless you update the client command path.
 3. Run the diagnostic command once before adding it to a client.
 
@@ -105,6 +117,7 @@ On first start the server creates:
 
 - Configuration: `%AppData%\EULE\OutlookMcp\config.json`
 - Logs: `%LocalAppData%\EULE\OutlookMcp\Logs`
+- Writing-style index/profile: `%AppData%\EULE\OutlookMcp\WritingStyle`
 
 ## Diagnostics
 
@@ -177,6 +190,36 @@ See [config.sample.json](src/OutlookMcp.Server/config.sample.json). Configuratio
     "MaximumRecursiveFolders": 1000,
     "MaximumBatchSize": 100
   },
+  "WritingStyle": {
+    "Enabled": true,
+    "DatabasePath": "%APPDATA%\\EULE\\OutlookMcp\\WritingStyle\\sent-email-index.db",
+    "ProfilePath": "%APPDATA%\\EULE\\OutlookMcp\\WritingStyle\\writing-profile.json",
+    "ProfileHistoryPath": "%APPDATA%\\EULE\\OutlookMcp\\WritingStyle\\writing-profile-history.json",
+    "ScanAllSentFolders": true,
+    "AllowedStores": [],
+    "BatchSize": 100,
+    "DelayBetweenBatchesMilliseconds": 100,
+    "SaveCheckpointAfterEachBatch": true,
+    "SyncBeforeDraftContext": true,
+    "MaximumRetrievedExamples": 5,
+    "MaximumCharactersPerExample": 3000,
+    "MaximumDraftContextCharacters": 30000,
+    "AllowFullAuthoredTextInResponses": false,
+    "StoreCleanBody": true,
+    "StoreQuotedText": true,
+    "StoreSignatureText": true,
+    "AdditionalSignatureMarkers": [],
+    "AdditionalDisclaimerMarkers": [],
+    "EnableFullTextSearch": true,
+    "ProfileRefreshRecommendationThreshold": 100,
+    "RecencyWeighting": {
+      "RecentMonths": 12,
+      "RecentWeight": 1.0,
+      "MiddleYears": 3,
+      "MiddleWeight": 0.8,
+      "OlderWeight": 0.6
+    }
+  },
   "Logging": {
     "Level": "Information",
     "RetentionDays": 14,
@@ -186,6 +229,44 @@ See [config.sample.json](src/OutlookMcp.Server/config.sample.json). Configuratio
 ```
 
 An empty `AllowedStores` list exposes all profile stores except blocked folders. To restrict stores, enter exact `store_id` values from `outlook_list_stores` or exact display names. Environment variables in attachment directories are expanded. Existing filesystem links/junctions in attachment destination paths are rejected.
+
+## Local writing-style system
+
+The writing-style feature processes every locally available item in every allowed Outlook Sent folder. It applies no date, message-length, recipient, project, language, or attachment filter. Every item produces an index row or a recorded failure/unsupported status. Reply history, forwarded content, signatures, and disclaimers are stored separately from likely user-authored text so they do not incorrectly define the user's style. Low-confidence and no-authored-text messages remain accounted for.
+
+This is retrieval and structured profiling, not model training or fine-tuning. The server maintains one unified profile whose primary language is Estonian; conditional audience or language habits remain rules within that one profile. SQLite FTS5 supplies local full-text retrieval, then recipient, project, intent, confidence, recency, and duplicate-diversity signals rank a small example set for each draft.
+
+### First use
+
+1. Call `outlook_style_get_scan_status`.
+2. Repeatedly call `outlook_style_scan_sent_emails` until `complete` is true. `maximum_batches` limits one call only; it never caps total mailbox coverage.
+3. Call `outlook_style_prepare_profile_dataset`. The returned examples are explicitly marked `untrusted_data`.
+4. Ask the AI agent to synthesise a version-1 structured profile from those statistics/examples, then call `outlook_style_save_profile`.
+5. Inspect with `outlook_style_get_profile`; use `outlook_style_update_profile` for confirmed rules, preferred/forbidden phrases, or corrections.
+
+For a normal reply, call `outlook_style_prepare_draft_context` with the current `message_id` and `store_id`. The agent should imitate tone and structure, use the current thread as factual truth, and then call the existing `outlook_create_reply_draft`. Nothing is sent automatically.
+
+### Maintenance and rollback
+
+```powershell
+OutlookMcp.Server.exe --style-scan-status
+OutlookMcp.Server.exe --style-scan
+OutlookMcp.Server.exe --style-sync
+OutlookMcp.Server.exe --style-rebuild-profile
+OutlookMcp.Server.exe --style-scan-status --style-db-path "D:\Private\sent-email-index.db" --style-profile-path "D:\Private\writing-profile.json"
+```
+
+`--style-scan` resumes persisted folder offsets and prints progress only, never bodies. `--style-sync` processes new or modified Sent items after the initial scan. `--style-rebuild-profile` saves a deterministic statistics-only baseline for review; nuanced AI-assisted regeneration still uses the profile-dataset/save workflow. Profile replacement and updates archive the prior JSON; list and restore versions through the MCP tools.
+
+The default local files are:
+
+- `%AppData%\EULE\OutlookMcp\WritingStyle\sent-email-index.db`
+- `%AppData%\EULE\OutlookMcp\WritingStyle\writing-profile.json`
+- `%AppData%\EULE\OutlookMcp\WritingStyle\writing-profile-history.json`
+
+Deleting the SQLite database while the server is stopped rebuilds the index from scratch on the next scan. Deleting the profile does not delete the index. If messages appear missing, first let Outlook finish IMAP synchronisation, run `--style-sync`, and inspect scan status/failure counts. The server never connects directly to IMAP or Microsoft Graph.
+
+Privacy note: local examples returned by a style MCP tool are sent to the configured MCP client/model provider. Outputs are bounded and full cleaned context is disabled by default, but users must review their provider's privacy terms and choose `AllowedStores`/retention settings appropriate for company mail.
 
 ## Integration testing
 
@@ -241,6 +322,8 @@ Use an absolute path, quote/escape it according to the client format, run `--ver
 - Outlook's object model and IMAP provider determine folder names, conversation metadata, MIME metadata, and EntryID stability.
 - Conversation and related-mail fallback is deterministic and bounded; it can miss messages when Outlook metadata and subjects both changed.
 - Search is Outlook-filtered but body/project matching fairly samples a capped candidate set across selected folders rather than maintaining a local index. The response reports folder, scan, and truncation counts. No vector database, embeddings, Graph, or direct IMAP access is used.
+- Writing-style sync detects new/modified items through Outlook timestamps and reconciles lightweight current EntryIDs to report missing indexed items. An IMAP EntryID change can appear as one missing old row plus one new row when Outlook exposes no reliable identity link; reconciliation never deletes local history or changes the mailbox.
+- Authored-text, recurring signature, and disclaimer detection is heuristic. Quality/confidence indicators are exposed so ambiguous items have less influence and can be reviewed.
 - Cancellation cannot interrupt an in-flight COM call safely; it cancels the caller's wait while the single STA worker finishes that call.
 - HTML support is intentionally opt-in and should remain disabled unless required.
 
@@ -248,6 +331,7 @@ Use an absolute path, quote/escape it according to the client format, run `--ver
 
 - `OutlookMcp.Server`: stdio MCP host, tool schemas, command-line diagnostics, logging.
 - `OutlookMcp.Application`: validation, configuration, body processing, safe identifiers and paths.
+- `OutlookMcp.Infrastructure`: private SQLite schema, checkpoints, statistics, and FTS5 retrieval.
 - `OutlookMcp.OutlookInterop`: Outlook session, STA dispatcher, COM-to-DTO gateway.
 - `OutlookMcp.Contracts`: bounded request/response and structured error contracts.
 - `tests`: pure unit tests and explicitly gated Outlook integration tests.

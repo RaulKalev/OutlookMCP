@@ -7,6 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OutlookMcp.Contracts\OutlookMcp.Contracts.csproj" />
     <ProjectReference Include="..\..\src\OutlookMcp.Application\OutlookMcp.Application.csproj" />
+    <ProjectReference Include="..\..\src\OutlookMcp.Infrastructure\OutlookMcp.Infrastructure.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2"><PrivateAssets>all</PrivateAssets></PackageReference>

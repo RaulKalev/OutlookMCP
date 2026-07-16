@@ -34,6 +34,7 @@ public sealed partial class EmailBodyCleaner
         var document = _parser.ParseDocument(html);
         foreach (var element in document.QuerySelectorAll("script,style,noscript,svg,canvas,iframe,object,embed,meta,link")) element.Remove();
         foreach (var br in document.QuerySelectorAll("br")) br.Replace(document.CreateTextNode("\n"));
+        foreach (var item in document.QuerySelectorAll("li")) item.Prepend(document.CreateTextNode("• "));
         foreach (var block in document.QuerySelectorAll("p,div,li,tr,h1,h2,h3,h4,h5,h6,blockquote")) block.Append(document.CreateTextNode("\n"));
         return WebUtility.HtmlDecode(document.Body?.TextContent ?? document.DocumentElement.TextContent);
     }

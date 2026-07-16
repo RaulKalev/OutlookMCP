@@ -34,6 +34,19 @@ public sealed class OutlookIntegrationTests
         Assert.Equal(message.MessageId, detail.MessageId);
     }
 
+    [OutlookFact]
+    public async Task DiscoverSentFoldersAndReadBoundedBatchWithoutMailboxChanges()
+    {
+        await using var gateway = CreateGateway();
+        var folders = await gateway.DiscoverSentFoldersAsync(CancellationToken.None);
+        Assert.NotEmpty(folders);
+        var folder = folders.First(value => value.TotalItems > 0);
+        var batch = await gateway.ReadSentFolderBatchAsync(folder.StoreId, folder.FolderId, 0, 2, null, CancellationToken.None);
+        Assert.InRange(batch.Messages.Count, 1, 2);
+        Assert.Equal(0, batch.StartOffset);
+        Assert.All(batch.Messages, message => Assert.Equal(folder.FolderId, message.FolderId));
+    }
+
     [OutlookFact(writesDraft: true)]
     public async Task CreateNewReplyAndForwardDraftsRemainUnsent()
     {

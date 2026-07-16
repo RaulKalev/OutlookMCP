@@ -28,6 +28,7 @@ public sealed class OutlookGateway : IOutlookGateway
     private readonly OutlookStaDispatcher _dispatcher;
     private readonly OutlookSession _session;
     private readonly OutlookOptions _options;
+    private readonly WritingStyleOptions _styleOptions;
     private readonly LoggingOptions _loggingOptions;
     private readonly EmailBodyCleaner _bodyCleaner;
     private readonly AttachmentPathPolicy _pathPolicy;
@@ -38,6 +39,7 @@ public sealed class OutlookGateway : IOutlookGateway
     {
         _dispatcher = dispatcher;
         _options = options.Outlook;
+        _styleOptions = options.WritingStyle;
         _loggingOptions = options.Logging;
         _bodyCleaner = bodyCleaner;
         _pathPolicy = new AttachmentPathPolicy(options.Outlook);
@@ -621,6 +623,152 @@ public sealed class OutlookGateway : IOutlookGateway
         finally { ComReleaseHelper.FinalRelease(destination); }
     }, cancellationToken);
 
+    public Task<IReadOnlyList<SentFolderDescriptorDto>> DiscoverSentFoldersAsync(CancellationToken cancellationToken) => ExecuteAsync<IReadOnlyList<SentFolderDescriptorDto>>("outlook_style_discover_sent_folders", () =>
+    {
+        _session.EnsureConnected();
+        var result = new Dictionary<(string StoreId, string FolderId), SentFolderDescriptorDto>();
+        dynamic? stores = null;
+        try
+        {
+            stores = _session.Namespace.Stores;
+            for (var index = 1; index <= (int)stores.Count; index++)
+            {
+                dynamic? store = null;
+                dynamic? sent = null;
+                dynamic? root = null;
+                try
+                {
+                    store = stores[index];
+                    var storeId = SafeString(() => store.StoreID) ?? string.Empty;
+                    var storeName = SafeString(() => store.DisplayName) ?? "Unnamed store";
+                    if (!IsStoreAllowed(storeId, storeName) || !IsStyleStoreAllowed(storeId, storeName)) continue;
+                    try
+                    {
+                        sent = store.GetDefaultFolder(SentFolder);
+                        AddSentFolder(result, sent, storeId, storeName, "outlook_default_sent_folder");
+                    }
+                    catch (COMException ex) { _logger.LogDebug(ex, "Store {StoreId} has no accessible default Sent folder", HashId(storeId)); }
+
+                    if (_styleOptions.ScanAllSentFolders)
+                    {
+                        root = store.GetRootFolder();
+                        var scannedFolders = 0;
+                        DiscoverNamedSentFolders(root, storeId, storeName, result, ref scannedFolders, 0);
+                    }
+                }
+                finally
+                {
+                    ComReleaseHelper.FinalRelease(root);
+                    ComReleaseHelper.FinalRelease(sent);
+                    ComReleaseHelper.FinalRelease(store);
+                }
+            }
+        }
+        finally { ComReleaseHelper.FinalRelease(stores); }
+        return result.Values.OrderBy(value => value.StoreName, StringComparer.CurrentCultureIgnoreCase).ThenBy(value => value.FolderPath, StringComparer.CurrentCultureIgnoreCase).ToArray();
+    }, cancellationToken);
+
+    public Task<SentEmailBatchDto> ReadSentFolderBatchAsync(string storeId, string folderId, int startOffset, int batchSize, DateTimeOffset? modifiedSince, CancellationToken cancellationToken) => ExecuteAsync("outlook_style_read_sent_batch", () =>
+    {
+        if (startOffset < 0) throw Invalid("start_offset must be zero or greater.");
+        if (batchSize is < 1 or > 500) throw Invalid("batch_size must be between 1 and 500.");
+        _session.EnsureConnected();
+        dynamic? folder = null;
+        dynamic? items = null;
+        dynamic? restricted = null;
+        try
+        {
+            folder = GetFolder(folderId, storeId);
+            if (SafeInt(() => folder.DefaultItemType) != 0) throw Invalid("folder_id must reference a mail folder.");
+            var path = SafeString(() => folder.FolderPath) ?? string.Empty;
+            var descriptor = new SentFolderDescriptorDto(storeId, StoreName(storeId), folderId, path, GetFolderItemCount(folder) ?? 0, modifiedSince is null ? "scan_checkpoint" : "incremental_last_modified");
+            items = folder.Items;
+            dynamic selected = items;
+            if (modifiedSince is not null)
+            {
+                var filter = $"[LastModificationTime] >= '{modifiedSince.Value.LocalDateTime.ToString("g", CultureInfo.CurrentCulture)}'";
+                restricted = items.Restrict(filter);
+                selected = restricted;
+            }
+            try { selected.Sort(modifiedSince is null ? "[SentOn]" : "[LastModificationTime]", false); }
+            catch (COMException ex)
+            {
+                _logger.LogDebug(ex, "Preferred Sent-folder sort property was unavailable; falling back to CreationTime");
+                selected.Sort("[CreationTime]", false);
+            }
+            var total = (int)selected.Count;
+            var messages = new List<SentEmailSourceDto>(Math.Min(batchSize, Math.Max(0, total - startOffset)));
+            var end = Math.Min(total, startOffset + batchSize);
+            for (var index = startOffset + 1; index <= end; index++)
+            {
+                dynamic? item = null;
+                try
+                {
+                    item = selected[index];
+                    if (IsMail(item)) messages.Add(BuildSentEmailSource((object)item, storeId, folderId, path));
+                    else messages.Add(BuildSentFailure(storeId, folderId, path, index, item, "unsupported_item_type", "The Sent folder item is not an Outlook MailItem."));
+                }
+                catch (Exception ex) when (ex is COMException or RuntimeBinderException)
+                {
+                    messages.Add(BuildSentFailure(storeId, folderId, path, index, item, "processing_failed", ex.Message));
+                }
+                finally { ComReleaseHelper.FinalRelease(item); }
+            }
+            var next = Math.Min(total, startOffset + messages.Count);
+            return new SentEmailBatchDto(descriptor with { TotalItems = total }, startOffset, next, total, messages, next >= total);
+        }
+        finally
+        {
+            ComReleaseHelper.FinalRelease(restricted);
+            ComReleaseHelper.FinalRelease(items);
+            ComReleaseHelper.FinalRelease(folder);
+        }
+    }, cancellationToken);
+
+    public Task<SentEmailReferenceBatchDto> ReadSentFolderReferencesBatchAsync(string storeId, string folderId, int startOffset, int batchSize, CancellationToken cancellationToken) => ExecuteAsync("outlook_style_read_sent_references", () =>
+    {
+        if (startOffset < 0) throw Invalid("start_offset must be zero or greater.");
+        if (batchSize is < 1 or > 500) throw Invalid("batch_size must be between 1 and 500.");
+        _session.EnsureConnected();
+        dynamic? folder = null;
+        dynamic? items = null;
+        try
+        {
+            folder = GetFolder(folderId, storeId);
+            if (SafeInt(() => folder.DefaultItemType) != 0) throw Invalid("folder_id must reference a mail folder.");
+            var path = SafeString(() => folder.FolderPath) ?? string.Empty;
+            items = folder.Items;
+            try { items.Sort("[SentOn]", false); }
+            catch (COMException) { items.Sort("[CreationTime]", false); }
+            var total = (int)items.Count;
+            var end = Math.Min(total, startOffset + batchSize);
+            var entryIds = new List<string>(Math.Min(batchSize, Math.Max(0, total - startOffset)));
+            for (var index = startOffset + 1; index <= end; index++)
+            {
+                dynamic? item = null;
+                try
+                {
+                    item = items[index];
+                    entryIds.Add(IsMail(item) ? StableSentEntryId(item, folderId) : SafeString(() => item.EntryID) ?? $"unavailable:{folderId}:{index}");
+                }
+                catch (Exception ex) when (ex is COMException or RuntimeBinderException)
+                {
+                    _logger.LogDebug(ex, "Could not read one Sent-folder item reference during reconciliation");
+                    throw new OutlookMcpException(ErrorCodes.ComOperationFailed, "Outlook could not read every Sent-folder reference for safe reconciliation.", "Retry incremental sync after Outlook finishes synchronising.", ex);
+                }
+                finally { ComReleaseHelper.FinalRelease(item); }
+            }
+            var next = end;
+            var descriptor = new SentFolderDescriptorDto(storeId, StoreName(storeId), folderId, path, total, "lightweight_reference_reconciliation");
+            return new SentEmailReferenceBatchDto(descriptor, startOffset, next, total, entryIds, next >= total);
+        }
+        finally
+        {
+            ComReleaseHelper.FinalRelease(items);
+            ComReleaseHelper.FinalRelease(folder);
+        }
+    }, cancellationToken);
+
     private SearchResultDto SearchCore(SearchEmailsRequest request)
     {
         var folders = ResolveSearchFolders(request);
@@ -818,6 +966,88 @@ public sealed class OutlookGateway : IOutlookGateway
     }
 
     private static bool Contains(string source, string? term) => string.IsNullOrWhiteSpace(term) || source.Contains(term, StringComparison.CurrentCultureIgnoreCase);
+
+    private void AddSentFolder(Dictionary<(string StoreId, string FolderId), SentFolderDescriptorDto> result, dynamic folder, string storeId, string storeName, string method)
+    {
+        var folderId = SafeString(() => folder.EntryID);
+        var path = SafeString(() => folder.FolderPath) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(folderId) || !IsFolderAllowed(path) || SafeInt(() => folder.DefaultItemType) != 0) return;
+        result[(storeId, folderId)] = new SentFolderDescriptorDto(storeId, storeName, folderId, path, GetFolderItemCount(folder) ?? 0, method);
+    }
+
+    private void DiscoverNamedSentFolders(dynamic parent, string storeId, string storeName, Dictionary<(string StoreId, string FolderId), SentFolderDescriptorDto> result, ref int scannedFolders, int depth)
+    {
+        if (depth > 20 || scannedFolders >= _options.MaximumRecursiveFolders) return;
+        dynamic? folders = null;
+        try
+        {
+            folders = parent.Folders;
+            for (var index = 1; index <= (int)folders.Count && scannedFolders < _options.MaximumRecursiveFolders; index++)
+            {
+                dynamic? child = null;
+                try
+                {
+                    child = folders[index];
+                    scannedFolders++;
+                    var path = SafeString(() => child.FolderPath) ?? string.Empty;
+                    if (!IsFolderAllowed(path)) continue;
+                    if (IsSentFolderName(SafeString(() => child.Name))) AddSentFolder(result, child, storeId, storeName, "localised_sent_folder_name");
+                    DiscoverNamedSentFolders(child, storeId, storeName, result, ref scannedFolders, depth + 1);
+                }
+                catch (COMException ex) { _logger.LogDebug(ex, "Could not inspect a folder during Sent-folder discovery"); }
+                finally { ComReleaseHelper.FinalRelease(child); }
+            }
+        }
+        finally { ComReleaseHelper.FinalRelease(folders); }
+    }
+
+    private SentEmailSourceDto BuildSentEmailSource(object itemObject, string storeId, string folderId, string folderPath)
+    {
+        dynamic item = itemObject;
+        var entryId = StableSentEntryId(item, folderId);
+        var sender = GetSender(itemObject);
+        return new SentEmailSourceDto(entryId, MessageReferenceCodec.Encode(new OutlookItemReference(entryId, storeId)), storeId, folderId, folderPath,
+            GetProperty(item, InternetMessageIdSchema), SafeString(() => item.ConversationID), SafeString(() => item.ConversationTopic), SafeString(() => item.Subject) ?? string.Empty,
+            SafeDate(() => item.SentOn), SafeDate(() => item.LastModificationTime), sender.DisplayName, sender.Address ?? sender.RawAddress,
+            GetRecipients(itemObject, 1), GetRecipients(itemObject, 2), GetRecipients(itemObject, 3), SafeString(() => item.Body), SafeString(() => item.HTMLBody),
+            GetAttachments(itemObject, false).Select(value => value.Filename).ToArray(), "successfully_processed", null);
+    }
+
+    private static SentEmailSourceDto BuildSentFailure(string storeId, string folderId, string folderPath, int index, dynamic? item, string status, string reason)
+    {
+        var entryId = item is null ? $"unavailable:{folderId}:{index}" : SafeString(() => item.EntryID) ?? $"unavailable:{folderId}:{index}";
+        return new SentEmailSourceDto(entryId, MessageReferenceCodec.Encode(new OutlookItemReference(entryId, storeId)), storeId, folderId, folderPath,
+            null, SafeString(() => item?.ConversationID), SafeString(() => item?.ConversationTopic), SafeString(() => item?.Subject) ?? string.Empty,
+            SafeDate(() => item?.SentOn), SafeDate(() => item?.LastModificationTime), null, null, [], [], [], null, null, [], status, reason);
+    }
+
+    private static string StableSentEntryId(dynamic item, string folderId) => SafeString(() => item.EntryID)
+        ?? $"unavailable:{folderId}:{HashId((SafeString(() => item.Subject) ?? string.Empty) + (SafeString(() => item.SentOn) ?? string.Empty))}";
+
+    private static bool IsSentFolderName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        var normalised = value.Trim().ToLowerInvariant();
+        return normalised is "sent" or "sent items" or "sent mail" or "saadetud" or "saadetud kirjad" or "gesendete elemente" or "gesendet" or "enviados" or "envoyés" or "posta inviata" or "отправленные";
+    }
+
+    private string StoreName(string storeId)
+    {
+        dynamic? stores = null;
+        dynamic? store = null;
+        try
+        {
+            stores = _session.Namespace.Stores;
+            for (var index = 1; index <= (int)stores.Count; index++)
+            {
+                ComReleaseHelper.FinalRelease(store);
+                store = stores[index];
+                if (string.Equals(SafeString(() => store.StoreID), storeId, StringComparison.Ordinal)) return SafeString(() => store.DisplayName) ?? "Unnamed store";
+            }
+            return "Unnamed store";
+        }
+        finally { ComReleaseHelper.FinalRelease(store); ComReleaseHelper.FinalRelease(stores); }
+    }
 
     private EmailSummaryDto BuildSummary(object itemObject, bool includeBodyPreview)
     {
@@ -1242,6 +1472,7 @@ public sealed class OutlookGateway : IOutlookGateway
     }
 
     private bool IsStoreAllowed(string storeId, string? displayName) => _options.AllowedStores.Count == 0 || _options.AllowedStores.Contains(storeId, StringComparer.Ordinal) || (displayName is not null && _options.AllowedStores.Contains(displayName, StringComparer.OrdinalIgnoreCase));
+    private bool IsStyleStoreAllowed(string storeId, string? displayName) => _styleOptions.AllowedStores.Count == 0 || _styleOptions.AllowedStores.Contains(storeId, StringComparer.Ordinal) || (displayName is not null && _styleOptions.AllowedStores.Contains(displayName, StringComparer.OrdinalIgnoreCase));
     private bool IsFolderAllowed(string path) => !_options.BlockedFolderPaths.Any(blocked => path.StartsWith(blocked, StringComparison.OrdinalIgnoreCase) || path.Contains(blocked, StringComparison.OrdinalIgnoreCase));
     private static bool IsMail(dynamic value) => SafeInt(() => value.Class) == MailItemClass;
     private static DateTimeOffset ItemTimestamp(object itemObject)
