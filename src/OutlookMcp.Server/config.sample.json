@@ -1,0 +1,22 @@
+{
+  "Outlook": {
+    "StartIfNotRunning": true,
+    "AllowedStores": [],
+    "BlockedFolderPaths": ["\\Personal"],
+    "DefaultSearchFolders": ["Inbox", "Sent Items"],
+    "DefaultSearchLimit": 25,
+    "MaximumSearchLimit": 100,
+    "DefaultBodyCharacterLimit": 50000,
+    "OperationTimeoutSeconds": 30,
+    "AllowHtmlBody": false,
+    "AllowAttachmentSaving": true,
+    "AllowedAttachmentDirectories": ["%USERPROFILE%\\Downloads\\Outlook AI"],
+    "AllowSelectedEmailAccess": true,
+    "MaximumRecursiveFolders": 1000
+  },
+  "Logging": {
+    "Level": "Information",
+    "RetentionDays": 14,
+    "IncludeTechnicalDetails": false
+  }
+}
