@@ -20,6 +20,7 @@ foreach ($rid in @("win-x64", "win-x86")) {
     if ($LASTEXITCODE -ne 0) { throw "Publish failed for $rid." }
     Copy-Item (Join-Path $root "README.md") $destination -Force
     Copy-Item (Join-Path $root "src\OutlookMcp.Server\config.sample.json") $destination -Force
+    Copy-Item (Join-Path $root "scripts\install-mcp.ps1") $destination -Force
     Copy-Item (Join-Path $root "examples") (Join-Path $destination "examples") -Recurse -Force
     $zip = Join-Path $artifacts "EULE-Outlook-MCP-$Version-$rid.zip"
     Compress-Archive -Path (Join-Path $destination "*") -DestinationPath $zip -Force

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "outlook": {
+      "command": "C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\EULE Outlook MCP\\OutlookMcp.Server.exe",
+      "args": []
+    }
+  }
+}

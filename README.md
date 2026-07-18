@@ -101,17 +101,47 @@ If Inno Setup 6 (`ISCC.exe`) is installed, the script also produces a per-user W
 
 ## Install
 
+### Quick install (recommended)
+
+One script installs the server and registers it with every AI agent it detects on the machine — Claude Code, Claude Desktop, Codex, and Google Antigravity:
+
+```powershell
+# From a source checkout (builds with the .NET 8 SDK, installs to %LocalAppData%\Programs\EULE Outlook MCP):
+powershell -ExecutionPolicy Bypass -File .\scripts\install-mcp.ps1
+
+# From an extracted release ZIP or the installed folder (uses the executable next to the script):
+powershell -ExecutionPolicy Bypass -File .\install-mcp.ps1
+```
+
+The installer offers the same registration as a post-install step, and the Start-menu shortcut **Register with AI Agents** reruns it at any time (for example after adding a new agent). Every configuration file is backed up next to the original (`*.backup-<timestamp>`) before it is changed, and re-running the script updates entries in place. Restart each agent afterwards; MCP configuration is read at startup.
+
+Useful options:
+
+| Option | Effect |
+|---|---|
+| `-Clients codex,antigravity` | Configure only the listed clients (`claude-code`, `claude-desktop`, `codex`, `antigravity`); also forces setup for clients that were not auto-detected |
+| `-Clients all` | Force all supported clients, creating configuration files that do not exist yet |
+| `-DryRun` | Show planned changes without writing anything |
+| `-Remove` | Remove the `outlook` entry from the selected clients (also run automatically by the uninstaller) |
+| `-ExePath <path>` | Register a specific executable (for example the x86 build) |
+| `-Rebuild` | Rebuild from source even when an installed executable exists |
+| `-Runtime win-x86` | Build the 32-bit executable when building from source |
+
+The script only registers the server; the sections under [MCP client configuration](#mcp-client-configuration) document what it writes so the same setup can be done manually.
+
 ### Installer
 
 1. Run `artifacts\installer\EULE-Outlook-MCP-Setup-1.2.0.exe`.
 2. No administrator elevation is required; the default location is `%LocalAppData%\Programs\EULE Outlook MCP`.
-3. The installer creates Start-menu shortcuts for diagnostics and this README and registers an uninstaller.
+3. The final page offers **Register with detected AI agents (Claude, Codex, Antigravity)**; leave it ticked to configure the clients immediately.
+4. The installer creates Start-menu shortcuts for diagnostics, agent registration, and this README, and registers an uninstaller. Uninstalling also removes the server entry from client configurations.
 
 ### Portable ZIP
 
 1. Extract `artifacts\EULE-Outlook-MCP-1.2.0-win-x64.zip` to a stable per-user folder.
-2. Do not move the executable after configuring an MCP client unless you update the client command path.
-3. Run the diagnostic command once before adding it to a client.
+2. Run `powershell -ExecutionPolicy Bypass -File .\install-mcp.ps1` from that folder, or configure clients manually.
+3. Do not move the executable after configuring an MCP client unless you update the client command path (or rerun `install-mcp.ps1`).
+4. Run the diagnostic command once before adding it to a client.
 
 On first start the server creates:
 
@@ -134,7 +164,15 @@ OutlookMcp.Server.exe --print-log-path
 
 ## MCP client configuration
 
-Replace the executable path below with the installed path. Restart the MCP client after editing its configuration.
+`install-mcp.ps1` performs all of the registrations below automatically. This section documents the manual equivalent for each client and for MCP clients the script does not know about. Replace the executable path below with the installed path. Restart the MCP client after editing its configuration.
+
+### Claude Code
+
+```powershell
+claude mcp add --scope user outlook -- "C:\Users\YOUR_NAME\AppData\Local\Programs\EULE Outlook MCP\OutlookMcp.Server.exe"
+```
+
+`--scope user` makes the server available in every project. Restart open Claude Code sessions and verify with `/mcp`.
 
 ### Codex app, CLI, or IDE extension
 
@@ -151,9 +189,26 @@ enabled = true
 
 Then restart Codex and use `/mcp` or `codex mcp list` to confirm the connection.
 
+### Google Antigravity
+
+Add the server through the agent panel's **... > Manage MCP Servers > View raw config**, or merge this into `%USERPROFILE%\.gemini\antigravity\mcp_config.json` (see [examples/antigravity-mcp-config.json](examples/antigravity-mcp-config.json)):
+
+```json
+{
+  "mcpServers": {
+    "outlook": {
+      "command": "C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\EULE Outlook MCP\\OutlookMcp.Server.exe",
+      "args": []
+    }
+  }
+}
+```
+
+Then refresh the MCP servers panel in Antigravity. If your Antigravity version shares a central config at `%USERPROFILE%\.gemini\config\mcp_config.json`, `install-mcp.ps1` updates that file as well when it exists.
+
 ### Claude Desktop and JSON-based MCP clients
 
-Merge this into the client's MCP configuration:
+Merge this into the client's MCP configuration (for Claude Desktop on Windows: `%APPDATA%\Claude\claude_desktop_config.json`; fully quit Claude Desktop from the tray before restarting):
 
 ```json
 {
