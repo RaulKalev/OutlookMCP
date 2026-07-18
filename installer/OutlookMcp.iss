@@ -29,12 +29,18 @@ WizardStyle=modern
 Source: "{#SourceRoot}\artifacts\publish\win-x64\OutlookMcp.Server.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\artifacts\publish\win-x64\config.sample.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\artifacts\publish\win-x64\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\artifacts\publish\win-x64\install-mcp.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\artifacts\publish\win-x64\examples\*"; DestDir: "{app}\examples"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\Outlook MCP Diagnostics"; Filename: "{app}\OutlookMcp.Server.exe"; Parameters: "--diagnose"; WorkingDir: "{app}"
+Name: "{group}\Register with AI Agents"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\install-mcp.ps1"" -Pause"; WorkingDir: "{app}"
 Name: "{group}\Outlook MCP README"; Filename: "{app}\README.md"
 Name: "{group}\Uninstall EULE Outlook MCP"; Filename: "{uninstallexe}"
 
 [Run]
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\install-mcp.ps1"" -Pause"; Description: "Register with detected AI agents (Claude, Codex, Antigravity)"; Flags: postinstall skipifsilent
 Filename: "{app}\OutlookMcp.Server.exe"; Parameters: "--diagnose"; Description: "Run Outlook MCP diagnostics"; Flags: postinstall nowait skipifsilent
+
+[UninstallRun]
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\install-mcp.ps1"" -Remove"; Flags: runhidden waituntilterminated; RunOnceId: "UnregisterMcpClients"
