@@ -37,6 +37,8 @@ All Outlook operations are serialised on one STA thread. COM objects stay inside
 
 ## Available MCP tools
 
+The table below describes the complete `full` profile. For lower model-credit usage, use the `compact` profile described under MCP client configuration.
+
 | Tool | Effect |
 |---|---|
 | `outlook_get_status` | Read-only Outlook/MAPI status |
@@ -126,6 +128,7 @@ Useful options:
 | `-ExePath <path>` | Register a specific executable (for example the x86 build) |
 | `-Rebuild` | Rebuild from source even when an installed executable exists |
 | `-Runtime win-x86` | Build the 32-bit executable when building from source |
+| `-ToolProfile compact` | Choose `compact`, `mail`, `style`, or `full`; defaults to the lowest-credit `compact` profile |
 
 The script only registers the server; the sections under [MCP client configuration](#mcp-client-configuration) document what it writes so the same setup can be done manually.
 
@@ -169,7 +172,7 @@ OutlookMcp.Server.exe --print-log-path
 ### Claude Code
 
 ```powershell
-claude mcp add --scope user outlook -- "C:\Users\YOUR_NAME\AppData\Local\Programs\EULE Outlook MCP\OutlookMcp.Server.exe"
+claude mcp add --scope user outlook -- "C:\Users\YOUR_NAME\AppData\Local\Programs\EULE Outlook MCP\OutlookMcp.Server.exe" --tool-profile compact
 ```
 
 `--scope user` makes the server available in every project. Restart open Claude Code sessions and verify with `/mcp`.
@@ -181,7 +184,7 @@ Add the server through **Settings > MCP servers > Add server**, choose **STDIO**
 ```toml
 [mcp_servers.outlook]
 command = 'C:\Users\YOUR_NAME\AppData\Local\Programs\EULE Outlook MCP\OutlookMcp.Server.exe'
-args = []
+args = ["--tool-profile", "compact"]
 startup_timeout_sec = 30
 tool_timeout_sec = 60
 enabled = true
@@ -198,7 +201,7 @@ Add the server through the agent panel's **... > Manage MCP Servers > View raw c
   "mcpServers": {
     "outlook": {
       "command": "C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\EULE Outlook MCP\\OutlookMcp.Server.exe",
-      "args": []
+      "args": ["--tool-profile", "compact"]
     }
   }
 }
@@ -215,13 +218,28 @@ Merge this into the client's MCP configuration (for Claude Desktop on Windows: `
   "mcpServers": {
     "outlook": {
       "command": "C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\EULE Outlook MCP\\OutlookMcp.Server.exe",
-      "args": []
+      "args": ["--tool-profile", "compact"]
     }
   }
 }
 ```
 
 The server writes protocol messages only to stdout. Structured logs go to rolling local files, so they do not corrupt stdio transport.
+
+### Tool profiles and model-credit usage
+
+MCP clients commonly include every advertised tool schema in model context. Use `--tool-profile compact` for normal search, bounded batch reading, selected-mail access, related-mail lookup, attachment listing, and unsent draft creation. It advertises nine smaller tools and returns reduced search/read DTOs with conservative defaults.
+
+Other profiles are available when a task needs them:
+
+| Profile | Advertised tools | Use for |
+|---|---:|---|
+| `compact` | 9 | Normal reading and drafting with the lowest schema overhead |
+| `mail` | 17 | Advanced search/read options, folder moves, and attachment saving |
+| `style` | 11 | Writing-style index and profile maintenance only |
+| `full` | 28 | Every capability; default when `--tool-profile` is omitted |
+
+Keep `compact` configured most of the time and temporarily switch the argument to `mail`, `style`, or `full` only when that capability is needed. The profile changes only which MCP tools are advertised; server-side safety checks remain unchanged.
 
 ## Configuration
 

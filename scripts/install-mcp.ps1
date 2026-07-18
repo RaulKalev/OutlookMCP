@@ -44,6 +44,10 @@ param(
     [ValidateSet('win-x64', 'win-x86')]
     [string]$Runtime = 'win-x64',
 
+    # Advertised MCP tool set. Compact minimizes model-context and credit usage.
+    [ValidateSet('compact', 'mail', 'style', 'full')]
+    [string]$ToolProfile = 'compact',
+
     # Rebuild from source even when an existing executable is found.
     [switch]$Rebuild,
 
@@ -131,7 +135,7 @@ function Set-JsonServerEntry([string]$Path, [string]$Exe) {
     }
     $entry = New-Object PSObject
     $entry | Add-Member -NotePropertyName 'command' -NotePropertyValue $Exe
-    $entry | Add-Member -NotePropertyName 'args' -NotePropertyValue @()
+    $entry | Add-Member -NotePropertyName 'args' -NotePropertyValue @('--tool-profile', $ToolProfile)
     $config.mcpServers | Add-Member -NotePropertyName $ServerName -NotePropertyValue $entry -Force
     Backup-ConfigFile $Path
     Write-TextFile $Path ($config | ConvertTo-Json -Depth 100)
@@ -176,7 +180,7 @@ function Set-CodexServerEntry([string]$Path, [string]$Exe, [bool]$RemoveOnly) {
         }
         $kept.Add("[mcp_servers.$ServerName]")
         $kept.Add($commandLine)
-        $kept.Add('args = []')
+        $kept.Add("args = [`"--tool-profile`", `"$ToolProfile`"]")
         $kept.Add('startup_timeout_sec = 30')
         $kept.Add('tool_timeout_sec = 60')
         $kept.Add('enabled = true')
@@ -309,7 +313,7 @@ function Set-ClaudeCodeClient([string]$Exe) {
         if ($Remove) {
             Add-Result 'claude-code' 'manual' "claude CLI not found. Run: claude mcp remove --scope user $ServerName"
         } else {
-            Add-Result 'claude-code' 'manual' "claude CLI not found. Run: claude mcp add --scope user $ServerName -- `"$Exe`""
+            Add-Result 'claude-code' 'manual' "claude CLI not found. Run: claude mcp add --scope user $ServerName -- `"$Exe`" --tool-profile $ToolProfile"
         }
         return
     }
@@ -317,7 +321,7 @@ function Set-ClaudeCodeClient([string]$Exe) {
         if ($Remove) {
             Add-Result 'claude-code' 'dry-run' "Would run: claude mcp remove --scope user $ServerName"
         } else {
-            Add-Result 'claude-code' 'dry-run' "Would run: claude mcp add --scope user $ServerName -- `"$Exe`""
+            Add-Result 'claude-code' 'dry-run' "Would run: claude mcp add --scope user $ServerName -- `"$Exe`" --tool-profile $ToolProfile"
         }
         return
     }
@@ -332,7 +336,7 @@ function Set-ClaudeCodeClient([string]$Exe) {
     }
     # Remove any stale user-scope entry first so add always succeeds, then re-add.
     Invoke-NativeCommand $cli.Source @('mcp', 'remove', '--scope', 'user', $ServerName) | Out-Null
-    $addition = Invoke-NativeCommand $cli.Source @('mcp', 'add', '--scope', 'user', $ServerName, '--', $Exe)
+    $addition = Invoke-NativeCommand $cli.Source @('mcp', 'add', '--scope', 'user', $ServerName, '--', $Exe, '--tool-profile', $ToolProfile)
     if ($addition.ExitCode -eq 0) {
         Add-Result 'claude-code' 'configured' 'User scope; restart Claude Code sessions, then verify with /mcp.'
     } else {

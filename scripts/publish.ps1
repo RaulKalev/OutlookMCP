@@ -16,6 +16,9 @@ if (-not $SkipTests) {
 
 foreach ($rid in @("win-x64", "win-x86")) {
     $destination = Join-Path $publishRoot $rid
+    if (Test-Path -LiteralPath $destination) {
+        Remove-Item -LiteralPath $destination -Recurse -Force
+    }
     dotnet publish (Join-Path $root "src\OutlookMcp.Server\OutlookMcp.Server.csproj") -c $Configuration -r $rid --self-contained true -p:PublishSingleFile=true -p:Version=$Version -o $destination
     if ($LASTEXITCODE -ne 0) { throw "Publish failed for $rid." }
     Copy-Item (Join-Path $root "README.md") $destination -Force

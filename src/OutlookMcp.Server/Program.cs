@@ -1,5 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -35,6 +37,7 @@ internal static class OutlookMcpProgram
         EnsureUserConfiguration();
         var options = LoadOptions();
         ApplyCommandLinePaths(args, options);
+        var toolProfile = McpToolProfileParser.Parse(args);
         OutlookMcpOptionsValidator.Validate(options);
         Directory.CreateDirectory(AppPaths.LogDirectory);
         Log.Logger = new LoggerConfiguration()
@@ -45,7 +48,7 @@ internal static class OutlookMcpProgram
 
         try
         {
-            using var host = BuildHost(args, options);
+            using var host = BuildHost(args, options, toolProfile);
             if (args.Contains("--diagnose", StringComparer.OrdinalIgnoreCase)) return await DiagnoseAsync(host).ConfigureAwait(false);
             var styleExitCode = await RunStyleMaintenanceAsync(host, args).ConfigureAwait(false);
             if (styleExitCode is not null) return styleExitCode.Value;
@@ -61,7 +64,7 @@ internal static class OutlookMcpProgram
         finally { await Log.CloseAndFlushAsync().ConfigureAwait(false); }
     }
 
-    private static IHost BuildHost(string[] args, OutlookMcpOptions options)
+    private static IHost BuildHost(string[] args, OutlookMcpOptions options, McpToolProfile toolProfile)
     {
         var builder = Host.CreateApplicationBuilder(args);
         builder.Logging.ClearProviders();
@@ -78,7 +81,29 @@ internal static class OutlookMcpProgram
         builder.Services.AddSingleton<IStyleIndexRepository>(provider => provider.GetRequiredService<SqliteStyleIndexRepository>());
         builder.Services.AddSingleton<WritingStyleCoordinator>();
         builder.Services.AddSingleton<ToolExecutor>();
-        builder.Services.AddMcpServer().WithStdioServerTransport().WithToolsFromAssembly();
+        var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+        };
+        var mcp = builder.Services.AddMcpServer().WithStdioServerTransport();
+        if (toolProfile is McpToolProfile.Compact)
+        {
+            mcp.WithTools<OutlookCompactTools>(jsonOptions);
+        }
+        else if (toolProfile is McpToolProfile.Mail)
+        {
+            mcp.WithTools<OutlookTools>(jsonOptions);
+        }
+        else if (toolProfile is McpToolProfile.Style)
+        {
+            mcp.WithTools<OutlookStyleTools>(jsonOptions);
+        }
+        else
+        {
+            mcp.WithTools<OutlookTools>(jsonOptions);
+            mcp.WithTools<OutlookStyleTools>(jsonOptions);
+        }
         return builder.Build();
     }
 
