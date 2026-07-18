@@ -34,4 +34,41 @@ public sealed class ErrorAndConfigurationTests
         options.Outlook.MaximumSearchLimit = 101;
         Assert.Throws<OutlookMcpException>(() => OutlookMcpOptionsValidator.Validate(options));
     }
+
+    [Fact]
+    public void Configuration_CalendarSyncDefaultsAreValid()
+    {
+        var options = new OutlookMcpOptions();
+        Assert.Equal(3, options.CalendarSync.DefaultMonthsAhead);
+        Assert.Null(options.CalendarSync.SourceCalendarFolderId);
+        Assert.Null(options.CalendarSync.ClientId);
+        Assert.Equal("common", options.CalendarSync.TenantId);
+        OutlookMcpOptionsValidator.Validate(options);
+    }
+
+    [Fact]
+    public void Configuration_RejectsEmptyCalendarSyncTenantAndCachePath()
+    {
+        var options = new OutlookMcpOptions();
+        options.CalendarSync.TenantId = " ";
+        Assert.Throws<OutlookMcpException>(() => OutlookMcpOptionsValidator.Validate(options));
+        options.CalendarSync.TenantId = "common";
+        options.CalendarSync.TokenCacheDirectory = "";
+        Assert.Throws<OutlookMcpException>(() => OutlookMcpOptionsValidator.Validate(options));
+    }
+
+    [Theory]
+    [InlineData(0, 24, 2_500)]
+    [InlineData(25, 24, 2_500)]
+    [InlineData(3, 37, 2_500)]
+    [InlineData(3, 24, 99)]
+    [InlineData(3, 24, 20_001)]
+    public void Configuration_RejectsInvalidCalendarSyncLimits(int defaultMonths, int maximumMonths, int maximumItems)
+    {
+        var options = new OutlookMcpOptions();
+        options.CalendarSync.DefaultMonthsAhead = defaultMonths;
+        options.CalendarSync.MaximumMonthsAhead = maximumMonths;
+        options.CalendarSync.MaximumItemsScanned = maximumItems;
+        Assert.Throws<OutlookMcpException>(() => OutlookMcpOptionsValidator.Validate(options));
+    }
 }

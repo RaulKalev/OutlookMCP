@@ -5,5 +5,7 @@
     <ProjectReference Include="..\OutlookMcp.Application\OutlookMcp.Application.csproj" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.29" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" />
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.86.1" />
+    <PackageReference Include="Microsoft.Identity.Client.Extensions.Msal" Version="4.86.1" />
   </ItemGroup>
 </Project>

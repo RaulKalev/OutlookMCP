@@ -20,6 +20,9 @@ public static class ErrorCodes
     public const string ResultLimitExceeded = "RESULT_LIMIT_EXCEEDED";
     public const string InvalidArgument = "INVALID_ARGUMENT";
     public const string OperationCancelled = "OPERATION_CANCELLED";
+    public const string ExchangeNotConfigured = "EXCHANGE_NOT_CONFIGURED";
+    public const string ExchangeAuthRequired = "EXCHANGE_AUTH_REQUIRED";
+    public const string ExchangeApiFailed = "EXCHANGE_API_FAILED";
 }
 
 public sealed record ErrorDto(
