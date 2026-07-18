@@ -67,4 +67,32 @@ public sealed class InputValidatorTests
     {
         Assert.Throws<OutlookMcpException>(() => InputValidator.ValidateFolderName(value));
     }
+
+    [Fact]
+    public void ValidateFolderRule_RequiresAtLeastOneCondition()
+    {
+        var request = new CreateFolderRuleRequest("store", "folder", "Learned rule");
+
+        var error = Assert.Throws<OutlookMcpException>(() => InputValidator.ValidateFolderRule(request));
+
+        Assert.Contains("At least one rule condition", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ValidateFolderRule_AcceptsDistinctBoundedConditions()
+    {
+        var request = new CreateFolderRuleRequest("store", "folder", "Learned rule",
+            SenderAddressContains: ["alerts@example.com"], SubjectContains: ["Invoice"]);
+
+        Assert.Same(request, InputValidator.ValidateFolderRule(request));
+    }
+
+    [Fact]
+    public void ValidateFolderRule_RejectsDuplicateConditionValuesIgnoringCase()
+    {
+        var request = new CreateFolderRuleRequest("store", "folder", "Learned rule",
+            SubjectContains: ["Invoice", "invoice"]);
+
+        Assert.Throws<OutlookMcpException>(() => InputValidator.ValidateFolderRule(request));
+    }
 }

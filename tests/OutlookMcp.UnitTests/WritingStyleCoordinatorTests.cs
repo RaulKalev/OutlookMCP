@@ -156,5 +156,7 @@ public sealed class WritingStyleCoordinatorTests : IDisposable
         public Task<DraftDto> CreateForwardDraftAsync(CreateForwardDraftRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<FolderDto> CreateFolderAsync(CreateFolderRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<MoveEmailsResultDto> MoveEmailsAsync(MoveEmailsRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<FolderRuleAnalysisDto> AnalyzeFolderForRulesAsync(AnalyzeFolderRulesRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<CreateFolderRuleResultDto> CreateFolderRuleAsync(CreateFolderRuleRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 }

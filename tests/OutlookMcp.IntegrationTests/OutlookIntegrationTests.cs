@@ -47,6 +47,21 @@ public sealed class OutlookIntegrationTests
         Assert.All(batch.Messages, message => Assert.Equal(folder.FolderId, message.FolderId));
     }
 
+    [OutlookFact]
+    public async Task AnalyzeFolderForRulesReturnsBoundedReadOnlyEvidence()
+    {
+        await using var gateway = CreateGateway();
+        var stores = await gateway.ListStoresAsync(CancellationToken.None);
+        var folders = await gateway.ListFoldersAsync(new ListFoldersRequest(stores[0].StoreId, Recursive: true, MaxDepth: 3), CancellationToken.None);
+        var folder = folders.First(value => value.ContainsMailItems && value.TotalItemCount > 0);
+
+        var analysis = await gateway.AnalyzeFolderForRulesAsync(new AnalyzeFolderRulesRequest(folder.StoreId, folder.FolderId, 5, 500), CancellationToken.None);
+
+        Assert.Equal(folder.FolderId, analysis.Folder.FolderId);
+        Assert.InRange(analysis.SampledMessageCount, 1, 5);
+        Assert.All(analysis.Messages, message => Assert.True(message.BodyExcerpt is null || message.BodyExcerpt.Length <= 500));
+    }
+
     [OutlookFact(writesDraft: true)]
     public async Task CreateNewReplyAndForwardDraftsRemainUnsent()
     {

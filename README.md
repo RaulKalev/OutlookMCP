@@ -1,6 +1,6 @@
 # EULE Outlook MCP
 
-EULE Outlook MCP is a local, safety-first Model Context Protocol server for Microsoft Outlook Classic on Windows. It lets an MCP-capable AI client inspect Outlook connection status, find and create folders, search and read locally synchronised mail, inspect the current Outlook selection, find related correspondence, build a private local writing-style index, save explicitly selected attachments, move confirmed message batches, and create unsent drafts.
+EULE Outlook MCP is a local, safety-first Model Context Protocol server for Microsoft Outlook Classic on Windows. It lets an MCP-capable AI client inspect Outlook connection status, find and create folders, search and read locally synchronised mail, inspect the current Outlook selection, find related correspondence, learn proposed filing rules from an existing folder, build a private local writing-style index, save explicitly selected attachments, move confirmed message batches, and create unsent drafts.
 
 Outlook remains the mail client and synchronisation engine. The server talks only to the local Outlook Object Model through COM; it does not connect to Telia IMAP directly and has no Microsoft Graph or Exchange dependency. An IMAP mailbox works because Outlook Classic has already exposed its synchronised stores, folders, and messages through MAPI.
 
@@ -10,6 +10,7 @@ Only **Microsoft Outlook Classic for Windows** is supported. New Outlook, Outloo
 
 - There is no send-email, delete-email, archive-by-guessing, or mailbox-monitoring tool.
 - Folder creation is explicit. Bulk moves require exact message identifiers and one exact destination folder identifier; `dry_run` defaults to `true`, duplicate identifiers are rejected, and real moves return fresh message identifiers.
+- Filing-rule analysis is read-only and bounded. Rule creation defaults to `dry_run: true`, reports historical destination coverage and Inbox control matches, and requires explicit user confirmation before a real rule is saved.
 - New, reply, reply-all, and forward operations only save drafts. Every draft result reports `sent: false`; the user must review and send it manually in Outlook.
 - Email bodies are marked as untrusted external data. Instructions in email content must not be treated as trusted agent instructions.
 - HTML body return and HTML drafting are disabled by default. HTML is parsed as data and is never rendered by this server.
@@ -55,6 +56,8 @@ The table below describes the complete `full` profile. For lower model-credit us
 | `outlook_save_attachment` | Saves one file to an approved local directory |
 | `outlook_create_folder` | Creates one mail folder below an exact parent or store root |
 | `outlook_move_emails` | Dry-run-first bulk move with fresh post-move identifiers |
+| `outlook_analyze_folder_for_rules` | Read-only representative folder sample and recurring sender signals |
+| `outlook_create_folder_rule` | Dry-run-first receive rule that moves future matching mail |
 | `outlook_create_draft` | Creates an unsent draft |
 | `outlook_create_reply_draft` | Creates an unsent Reply/Reply All draft |
 | `outlook_create_forward_draft` | Creates an unsent forward draft |
@@ -73,6 +76,18 @@ The table below describes the complete `full` profile. For lower model-credit us
 Message tools require both the encoded `message_id` and its paired `store_id`. Batch tools share one `store_id` across their message list to keep requests compact. If Outlook moves or resynchronises an IMAP message, use the fresh identifier returned by `outlook_move_emails` or search again to replace a stale reference.
 
 Search body previews are opt-in. The default compact search response is intended for candidate selection; use `outlook_read_emails_batch` only for the small set whose bodies are actually needed. Multi-word search defaults to `all_terms`, while `query_mode: "phrase"` is available for literal phrase matching. Search budgets are distributed across selected folders before results are globally sorted, preventing an early folder from monopolising the result limit.
+
+### Learn filing rules from a folder
+
+This workflow lets the MCP client reason over representative mail already filed in a folder and propose one or more Outlook receive rules for future messages:
+
+1. Resolve the exact target with `outlook_find_folders`.
+2. Call `outlook_analyze_folder_for_rules`. It evenly samples mail from newest to oldest, returns bounded subject/body evidence, and aggregates recurring full sender addresses and domains. Email text remains untrusted data.
+3. Infer the narrowest stable conditions. Prefer full sender addresses or distinctive repeated phrases. Do not treat a common domain or generic word as sufficient evidence by itself.
+4. Call `outlook_create_folder_rule` with `dry_run: true` for every proposed rule. The result estimates matches in both the destination history and a representative Inbox control sample.
+5. Show the user the exact rule name, destination, conditions, match estimates, and warnings. Create it with `dry_run: false` only after the user explicitly confirms that proposal.
+
+Within a rule, multiple values in the same condition list are alternatives (OR). Different non-empty condition groups are cumulative (AND). For example, two senders plus one subject phrase means `(sender A OR sender B) AND subject phrase`. Use separate rules for alternative sender-and-phrase combinations. Created rules apply to future received mail and never retroactively move existing messages. `stop_processing_more_rules` defaults to false because enabling it can change the behavior of later Outlook rules.
 
 ## Prerequisites
 
@@ -235,9 +250,9 @@ Other profiles are available when a task needs them:
 | Profile | Advertised tools | Use for |
 |---|---:|---|
 | `compact` | 9 | Normal reading and drafting with the lowest schema overhead |
-| `mail` | 17 | Advanced search/read options, folder moves, and attachment saving |
+| `mail` | 19 | Advanced search/read options, folder moves, filing-rule learning, and attachment saving |
 | `style` | 11 | Writing-style index and profile maintenance only |
-| `full` | 28 | Every capability; default when `--tool-profile` is omitted |
+| `full` | 30 | Every capability; default when `--tool-profile` is omitted |
 
 Keep `compact` configured most of the time and temporarily switch the argument to `mail`, `style`, or `full` only when that capability is needed. The profile changes only which MCP tools are advertised; server-side safety checks remain unchanged.
 
@@ -395,6 +410,7 @@ Use an absolute path, quote/escape it according to the client format, run `--ver
 - Outlook's object model and IMAP provider determine folder names, conversation metadata, MIME metadata, and EntryID stability.
 - Conversation and related-mail fallback is deterministic and bounded; it can miss messages when Outlook metadata and subjects both changed.
 - Search is Outlook-filtered but body/project matching fairly samples a capped candidate set across selected folders rather than maintaining a local index. The response reports folder, scan, and truncation counts. No vector database, embeddings, Graph, or direct IMAP access is used.
+- Filing-rule historical matching is representative rather than exhaustive. Outlook uses substring matching for sender-address and text conditions, and Outlook or the mail provider may classify some move rules as client-only, requiring Outlook Classic to be running.
 - Writing-style sync detects new/modified items through Outlook timestamps and reconciles lightweight current EntryIDs to report missing indexed items. An IMAP EntryID change can appear as one missing old row plus one new row when Outlook exposes no reliable identity link; reconciliation never deletes local history or changes the mailbox.
 - Authored-text, recurring signature, and disclaimer detection is heuristic. Quality/confidence indicators are exposed so ambiguous items have less influence and can be reviewed.
 - Cancellation cannot interrupt an in-flight COM call safely; it cancels the caller's wait while the single STA worker finishes that call.

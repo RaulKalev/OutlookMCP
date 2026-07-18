@@ -51,6 +51,21 @@ public static class InputValidator
         if (!string.Equals(displayName, displayName.Trim(), StringComparison.Ordinal)) throw Invalid("display_name cannot start or end with whitespace.");
     }
 
+    public static CreateFolderRuleRequest ValidateFolderRule(CreateFolderRuleRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.StoreId)) throw Invalid("store_id is required.");
+        if (string.IsNullOrWhiteSpace(request.DestinationFolderId)) throw Invalid("destination_folder_id is required.");
+        if (string.IsNullOrWhiteSpace(request.RuleName)) throw Invalid("rule_name is required.");
+        if (request.RuleName.Length > 255) throw Invalid("rule_name must not exceed 255 characters.");
+        if (!string.Equals(request.RuleName, request.RuleName.Trim(), StringComparison.Ordinal)) throw Invalid("rule_name cannot start or end with whitespace.");
+        if (request.RuleName.IndexOfAny(['\r', '\n', '\0']) >= 0) throw Invalid("rule_name contains an unsupported character.");
+
+        var groups = new[] { request.SenderAddressContains, request.SubjectContains, request.BodyContains, request.BodyOrSubjectContains };
+        if (groups.All(value => value is null || value.Count == 0)) throw Invalid("At least one rule condition is required.");
+        foreach (var group in groups) ValidateRuleValues(group);
+        return request;
+    }
+
     public static void ValidateBodyFormat(string bodyFormat)
     {
         if (bodyFormat is not ("plain_text" or "html" or "both"))
@@ -75,4 +90,14 @@ public static class InputValidator
     }
 
     private static OutlookMcpException Invalid(string message) => new(ErrorCodes.InvalidArgument, message, "Correct the request parameters and retry.");
+
+    private static void ValidateRuleValues(IReadOnlyList<string>? values)
+    {
+        if (values is null) return;
+        if (values.Count > 20) throw Invalid("Each rule condition can contain at most 20 values.");
+        if (values.Any(string.IsNullOrWhiteSpace)) throw Invalid("Rule condition values cannot be empty.");
+        if (values.Any(value => value.Length > 255 || value.IndexOfAny(['\r', '\n', '\0']) >= 0)) throw Invalid("Rule condition values must not exceed 255 characters or contain control characters.");
+        if (values.Any(value => !string.Equals(value, value.Trim(), StringComparison.Ordinal))) throw Invalid("Rule condition values cannot start or end with whitespace.");
+        if (values.Distinct(StringComparer.OrdinalIgnoreCase).Count() != values.Count) throw Invalid("Rule condition values cannot contain duplicates.");
+    }
 }

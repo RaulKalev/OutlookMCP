@@ -180,6 +180,56 @@ public sealed record MoveEmailsResultDto(
     [property: JsonPropertyName("succeeded_count")] int SucceededCount,
     [property: JsonPropertyName("failed_count")] int FailedCount);
 
+public sealed record FolderRuleEmailSampleDto(
+    [property: JsonPropertyName("message_id")] string MessageId,
+    [property: JsonPropertyName("sender_name")] string? SenderName,
+    [property: JsonPropertyName("sender_email")] string? SenderEmail,
+    [property: JsonPropertyName("subject")] string Subject,
+    [property: JsonPropertyName("body_excerpt")] string? BodyExcerpt,
+    [property: JsonPropertyName("timestamp")] DateTimeOffset Timestamp);
+
+public sealed record FolderRuleSignalDto(
+    [property: JsonPropertyName("value")] string Value,
+    [property: JsonPropertyName("message_count")] int MessageCount,
+    [property: JsonPropertyName("sample_percentage")] double SamplePercentage);
+
+public sealed record FolderRuleAnalysisDto(
+    [property: JsonPropertyName("folder")] FolderDto Folder,
+    [property: JsonPropertyName("folder_item_count")] int FolderItemCount,
+    [property: JsonPropertyName("sampled_message_count")] int SampledMessageCount,
+    [property: JsonPropertyName("sample_method")] string SampleMethod,
+    [property: JsonPropertyName("messages")] IReadOnlyList<FolderRuleEmailSampleDto> Messages,
+    [property: JsonPropertyName("recurring_senders")] IReadOnlyList<FolderRuleSignalDto> RecurringSenders,
+    [property: JsonPropertyName("recurring_sender_domains")] IReadOnlyList<FolderRuleSignalDto> RecurringSenderDomains,
+    [property: JsonPropertyName("guidance")] IReadOnlyList<string> Guidance,
+    [property: JsonPropertyName("external_content_warning")] string ExternalContentWarning);
+
+public sealed record FolderRuleConditionsDto(
+    [property: JsonPropertyName("sender_address_contains")] IReadOnlyList<string> SenderAddressContains,
+    [property: JsonPropertyName("subject_contains")] IReadOnlyList<string> SubjectContains,
+    [property: JsonPropertyName("body_contains")] IReadOnlyList<string> BodyContains,
+    [property: JsonPropertyName("body_or_subject_contains")] IReadOnlyList<string> BodyOrSubjectContains);
+
+public sealed record FolderRuleMatchEvaluationDto(
+    [property: JsonPropertyName("scope")] string Scope,
+    [property: JsonPropertyName("sampled_message_count")] int SampledMessageCount,
+    [property: JsonPropertyName("matched_message_count")] int MatchedMessageCount,
+    [property: JsonPropertyName("match_percentage")] double MatchPercentage);
+
+public sealed record CreateFolderRuleResultDto(
+    [property: JsonPropertyName("rule_name")] string RuleName,
+    [property: JsonPropertyName("destination_folder")] FolderDto DestinationFolder,
+    [property: JsonPropertyName("conditions")] FolderRuleConditionsDto Conditions,
+    [property: JsonPropertyName("condition_semantics")] string ConditionSemantics,
+    [property: JsonPropertyName("stop_processing_more_rules")] bool StopProcessingMoreRules,
+    [property: JsonPropertyName("dry_run")] bool DryRun,
+    [property: JsonPropertyName("created")] bool Created,
+    [property: JsonPropertyName("enabled")] bool Enabled,
+    [property: JsonPropertyName("execution_order")] int? ExecutionOrder,
+    [property: JsonPropertyName("destination_evaluation")] FolderRuleMatchEvaluationDto DestinationEvaluation,
+    [property: JsonPropertyName("inbox_control_evaluation")] FolderRuleMatchEvaluationDto InboxControlEvaluation,
+    [property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings);
+
 public sealed record OutlookDiagnosticDto(
     [property: JsonPropertyName("draft_folder_accessible")] bool DraftFolderAccessible,
     [property: JsonPropertyName("selected_item_accessible")] bool SelectedItemAccessible);

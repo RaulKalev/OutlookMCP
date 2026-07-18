@@ -34,3 +34,14 @@ public sealed record CreateReplyDraftRequest(string MessageId, string StoreId, s
 public sealed record CreateForwardDraftRequest(string MessageId, string StoreId, string? Body = null, string? To = null, string? Cc = null, bool IncludeAttachments = true, bool DisplayDraft = false);
 public sealed record CreateFolderRequest(string StoreId, string DisplayName, string? ParentFolderId = null);
 public sealed record MoveEmailsRequest(IReadOnlyList<string> MessageIds, string StoreId, string DestinationFolderId, bool DryRun = true, bool ContinueOnError = true);
+public sealed record AnalyzeFolderRulesRequest(string StoreId, string FolderId, int SampleSize = 30, int MaxBodyCharacters = 1_500, bool IncludeBody = true);
+public sealed record CreateFolderRuleRequest(
+    string StoreId,
+    string DestinationFolderId,
+    string RuleName,
+    IReadOnlyList<string>? SenderAddressContains = null,
+    IReadOnlyList<string>? SubjectContains = null,
+    IReadOnlyList<string>? BodyContains = null,
+    IReadOnlyList<string>? BodyOrSubjectContains = null,
+    bool StopProcessingMoreRules = false,
+    bool DryRun = true);
