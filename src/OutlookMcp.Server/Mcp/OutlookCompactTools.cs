@@ -2,6 +2,7 @@ using System.ComponentModel;
 using ModelContextProtocol.Server;
 using OutlookMcp.Application.Abstractions;
 using OutlookMcp.Application.Errors;
+using OutlookMcp.Application.Services;
 using OutlookMcp.Contracts;
 
 namespace OutlookMcp.Server.Mcp;
@@ -11,7 +12,7 @@ namespace OutlookMcp.Server.Mcp;
 /// organisation, attachment saving, and style maintenance remain in the full profile.
 /// </summary>
 [McpServerToolType]
-public sealed class OutlookCompactTools(IOutlookGateway outlook, ToolExecutor executor)
+public sealed class OutlookCompactTools(IOutlookGateway outlook, IExchangeCalendarGateway exchange, CalendarSyncCoordinator calendarSync, ToolExecutor executor)
 {
     [McpServerTool(Name = "outlook_find_folders"), Description("Find mail folders by name or path. Read-only.")]
     public Task<ToolResponse<IReadOnlyList<FolderDto>>> FindFolders(
@@ -93,16 +94,26 @@ public sealed class OutlookCompactTools(IOutlookGateway outlook, ToolExecutor ex
         CancellationToken cancellationToken = default) =>
         executor.RunAsync(() => outlook.ListCalendarFoldersAsync(store_id, cancellationToken));
 
-    [McpServerTool(Name = "outlook_sync_calendar"), Description("One-way sync of upcoming events from a source calendar into a dedicated sync-owned target calendar. Adds, refreshes, and prunes on the target only; never modifies the source and never sends invitations. dry_run defaults to true; apply only after the user confirms the plan.")]
+    [McpServerTool(Name = "outlook_exchange_login"), Description("Start the one-time Exchange Online device-code sign-in. Show the returned URL and code to the user.")]
+    public Task<ToolResponse<ExchangeLoginDto>> ExchangeLogin(CancellationToken cancellationToken = default) =>
+        executor.RunAsync(() => exchange.BeginDeviceCodeLoginAsync(cancellationToken));
+
+    [McpServerTool(Name = "outlook_exchange_auth_status"), Description("Report the Exchange sign-in state. Read-only.")]
+    public Task<ToolResponse<ExchangeAuthStatusDto>> ExchangeAuthStatus(CancellationToken cancellationToken = default) =>
+        executor.RunAsync(() => exchange.GetAuthStatusAsync(cancellationToken));
+
+    [McpServerTool(Name = "outlook_exchange_logout"), Description("Sign the Exchange account out and clear cached tokens.")]
+    public Task<ToolResponse<ExchangeAuthStatusDto>> ExchangeLogout(CancellationToken cancellationToken = default) =>
+        executor.RunAsync(() => exchange.LogoutAsync(cancellationToken));
+
+    [McpServerTool(Name = "outlook_sync_calendar"), Description("One-way sync of upcoming local calendar events into the signed-in Exchange account's sync-owned calendar via Microsoft Graph. Never modifies the local calendar, never sends invitations. dry_run defaults to true; apply only after the user confirms the plan.")]
     public Task<ToolResponse<CalendarSyncResultDto>> SyncCalendar(
         string? source_calendar_folder_id = null,
         string? source_store_id = null,
-        [Description("Must be dedicated to this sync; unmatched window events there are deleted.")] string? target_calendar_folder_id = null,
-        string? target_store_id = null,
         [Description("Months ahead of today; default from config (3).")] int? months_ahead = null,
         bool dry_run = true,
-        CancellationToken cancellationToken = default) => executor.RunAsync(() => outlook.SyncCalendarAsync(
-            new(source_calendar_folder_id, source_store_id, target_calendar_folder_id, target_store_id, months_ahead, dry_run), cancellationToken));
+        CancellationToken cancellationToken = default) => executor.RunAsync(() => calendarSync.SyncAsync(
+            new(source_calendar_folder_id, source_store_id, months_ahead, dry_run), cancellationToken));
 
     [McpServerTool(Name = "outlook_create_draft"), Description("Save a new unsent draft for user review. Never sends.")]
     public Task<ToolResponse<DraftDto>> CreateDraft(

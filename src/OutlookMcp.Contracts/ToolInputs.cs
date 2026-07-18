@@ -38,8 +38,6 @@ public sealed record AnalyzeFolderRulesRequest(string StoreId, string FolderId, 
 public sealed record SyncCalendarRequest(
     string? SourceCalendarFolderId = null,
     string? SourceStoreId = null,
-    string? TargetCalendarFolderId = null,
-    string? TargetStoreId = null,
     int? MonthsAhead = null,
     bool DryRun = true);
 

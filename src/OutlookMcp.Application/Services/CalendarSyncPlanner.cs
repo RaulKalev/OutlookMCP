@@ -1,18 +1,30 @@
+using OutlookMcp.Contracts;
+
 namespace OutlookMcp.Application.Services;
 
-/// <summary>A source-calendar event inside the sync window, identified by a stable sync key.</summary>
-public sealed record SourceCalendarEvent(
-    string EntryId,
+/// <summary>
+/// One expanded source-calendar occurrence inside the sync window, carrying every field
+/// needed to recreate it as a standalone Exchange event. Recurring series are expanded
+/// occurrence by occurrence, so cancelled or moved single occurrences follow automatically.
+/// </summary>
+public sealed record SourceCalendarOccurrence(
     string SyncKey,
     string ModifiedStamp,
     string Subject,
     DateTimeOffset? Start,
     DateTimeOffset? End,
-    bool IsRecurring,
-    bool RecurrenceExtendsBeyondWindow,
-    bool IsMeeting);
+    bool IsAllDay,
+    string TimeZoneId,
+    string? BodyText,
+    string? Location,
+    IReadOnlyList<string> Categories,
+    int? ReminderMinutesBeforeStart,
+    string BusyStatus,
+    string Sensitivity,
+    bool IsMeeting,
+    bool FromRecurringSeries);
 
-/// <summary>A target-calendar event with the sync tags read back from its user properties.</summary>
+/// <summary>A target-calendar event with the sync tags read back from its extended properties.</summary>
 public sealed record TargetCalendarEvent(
     string EntryId,
     string? SyncKey,
@@ -23,25 +35,31 @@ public sealed record TargetCalendarEvent(
     bool IsRecurring,
     bool InWindow);
 
-public sealed record CalendarSyncUpdate(SourceCalendarEvent Source, TargetCalendarEvent Target);
+public sealed record CalendarSyncUpdate(SourceCalendarOccurrence Source, TargetCalendarEvent Target);
 
 public sealed record CalendarSyncPlan(
-    IReadOnlyList<SourceCalendarEvent> Adds,
+    IReadOnlyList<SourceCalendarOccurrence> Adds,
     IReadOnlyList<CalendarSyncUpdate> Updates,
     IReadOnlyList<TargetCalendarEvent> Deletes,
     int UnchangedCount);
 
+/// <summary>The bounded outcome of expanding one local calendar's occurrences for the sync window.</summary>
+public sealed record CalendarOccurrenceReadResult(
+    FolderDto SourceCalendar,
+    IReadOnlyList<SourceCalendarOccurrence> Occurrences,
+    int SkippedCount);
+
 /// <summary>
 /// Computes a one-way calendar sync plan. The source calendar is never modified; the plan
-/// only ever adds to, refreshes, or prunes the dedicated target calendar. Target events are
+/// only ever adds to, refreshes, or prunes the sync-owned target calendar. Target events are
 /// matched by the sync key stamped onto each copy; unmatched target events are deleted only
 /// when they fall inside the sync window, so history outside the window is left alone.
 /// </summary>
 public static class CalendarSyncPlanner
 {
-    public static CalendarSyncPlan Plan(IReadOnlyList<SourceCalendarEvent> sourceEvents, IReadOnlyList<TargetCalendarEvent> targetEvents)
+    public static CalendarSyncPlan Plan(IReadOnlyList<SourceCalendarOccurrence> sourceEvents, IReadOnlyList<TargetCalendarEvent> targetEvents)
     {
-        var adds = new List<SourceCalendarEvent>();
+        var adds = new List<SourceCalendarOccurrence>();
         var updates = new List<CalendarSyncUpdate>();
         var deletes = new List<TargetCalendarEvent>();
         var unchanged = 0;
@@ -76,7 +94,7 @@ public static class CalendarSyncPlanner
     /// <summary>
     /// Decides whether an event belongs to the sync window. Single events count when they
     /// overlap the window; recurring series count while the series is still active anywhere
-    /// in the window, because the series master carries every occurrence with it.
+    /// in the window.
     /// </summary>
     public static bool IsEventInWindow(
         DateTimeOffset? start,

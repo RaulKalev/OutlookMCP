@@ -28,13 +28,15 @@ public sealed class OutlookOptions
 
 public sealed class CalendarSyncOptions
 {
+    public string? ClientId { get; set; }
+    public string TenantId { get; set; } = "common";
     public string? SourceCalendarFolderId { get; set; }
     public string? SourceStoreId { get; set; }
-    public string? TargetCalendarFolderId { get; set; }
-    public string? TargetStoreId { get; set; }
+    public string? TargetCalendarId { get; set; }
     public int DefaultMonthsAhead { get; set; } = 3;
     public int MaximumMonthsAhead { get; set; } = 24;
     public int MaximumItemsScanned { get; set; } = 2_500;
+    public string TokenCacheDirectory { get; set; } = "%APPDATA%\\EULE\\OutlookMcp\\Exchange";
 }
 
 public sealed class LoggingOptions

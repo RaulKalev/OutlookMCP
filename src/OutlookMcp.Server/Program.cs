@@ -11,6 +11,7 @@ using OutlookMcp.Application.Abstractions;
 using OutlookMcp.Application.Configuration;
 using OutlookMcp.Application.Services;
 using OutlookMcp.Application.WritingStyle;
+using OutlookMcp.Infrastructure.Exchange;
 using OutlookMcp.Infrastructure.WritingStyle;
 using OutlookMcp.OutlookInterop;
 using OutlookMcp.Server.Mcp;
@@ -80,6 +81,10 @@ internal static class OutlookMcpProgram
         builder.Services.AddSingleton<SqliteStyleIndexRepository>();
         builder.Services.AddSingleton<IStyleIndexRepository>(provider => provider.GetRequiredService<SqliteStyleIndexRepository>());
         builder.Services.AddSingleton<WritingStyleCoordinator>();
+        builder.Services.AddSingleton<ExchangeTokenProvider>();
+        builder.Services.AddSingleton<GraphCalendarClient>();
+        builder.Services.AddSingleton<IExchangeCalendarGateway>(provider => provider.GetRequiredService<GraphCalendarClient>());
+        builder.Services.AddSingleton<CalendarSyncCoordinator>();
         builder.Services.AddSingleton<ToolExecutor>();
         var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {

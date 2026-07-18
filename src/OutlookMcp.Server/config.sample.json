@@ -16,13 +16,15 @@
     "MaximumBatchSize": 100
   },
   "CalendarSync": {
+    "ClientId": null,
+    "TenantId": "common",
     "SourceCalendarFolderId": null,
     "SourceStoreId": null,
-    "TargetCalendarFolderId": null,
-    "TargetStoreId": null,
+    "TargetCalendarId": null,
     "DefaultMonthsAhead": 3,
     "MaximumMonthsAhead": 24,
-    "MaximumItemsScanned": 2500
+    "MaximumItemsScanned": 2500,
+    "TokenCacheDirectory": "%APPDATA%\\EULE\\OutlookMcp\\Exchange"
   },
   "WritingStyle": {
     "Enabled": true,

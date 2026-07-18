@@ -1,3 +1,4 @@
+using OutlookMcp.Application.Services;
 using OutlookMcp.Contracts;
 
 namespace OutlookMcp.Application.Abstractions;
@@ -24,7 +25,7 @@ public interface IOutlookGateway : IAsyncDisposable
     Task<FolderRuleAnalysisDto> AnalyzeFolderForRulesAsync(AnalyzeFolderRulesRequest request, CancellationToken cancellationToken);
     Task<CreateFolderRuleResultDto> CreateFolderRuleAsync(CreateFolderRuleRequest request, CancellationToken cancellationToken);
     Task<IReadOnlyList<CalendarFolderDto>> ListCalendarFoldersAsync(string? storeId, CancellationToken cancellationToken);
-    Task<CalendarSyncResultDto> SyncCalendarAsync(SyncCalendarRequest request, CancellationToken cancellationToken);
+    Task<CalendarOccurrenceReadResult> ReadCalendarOccurrencesAsync(string sourceFolderId, string? sourceStoreId, DateTimeOffset windowStart, DateTimeOffset windowEnd, CancellationToken cancellationToken);
     Task<IReadOnlyList<SentFolderDescriptorDto>> DiscoverSentFoldersAsync(CancellationToken cancellationToken);
     Task<SentEmailBatchDto> ReadSentFolderBatchAsync(string storeId, string folderId, int startOffset, int batchSize, DateTimeOffset? modifiedSince, CancellationToken cancellationToken);
     Task<SentEmailReferenceBatchDto> ReadSentFolderReferencesBatchAsync(string storeId, string folderId, int startOffset, int batchSize, CancellationToken cancellationToken);

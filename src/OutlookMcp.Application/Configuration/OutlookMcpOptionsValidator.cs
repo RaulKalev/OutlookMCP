@@ -18,6 +18,8 @@ public static class OutlookMcpOptionsValidator
         if (options.CalendarSync.MaximumMonthsAhead is < 1 or > 36) throw Invalid("CalendarSync.MaximumMonthsAhead must be between 1 and 36.");
         if (options.CalendarSync.DefaultMonthsAhead < 1 || options.CalendarSync.DefaultMonthsAhead > options.CalendarSync.MaximumMonthsAhead) throw Invalid("CalendarSync.DefaultMonthsAhead must be between 1 and CalendarSync.MaximumMonthsAhead.");
         if (options.CalendarSync.MaximumItemsScanned is < 100 or > 20_000) throw Invalid("CalendarSync.MaximumItemsScanned must be between 100 and 20000.");
+        if (string.IsNullOrWhiteSpace(options.CalendarSync.TenantId)) throw Invalid("CalendarSync.TenantId is required; use 'common' unless a specific tenant is needed.");
+        if (string.IsNullOrWhiteSpace(options.CalendarSync.TokenCacheDirectory)) throw Invalid("CalendarSync.TokenCacheDirectory is required.");
         if (options.WritingStyle.BatchSize is < 1 or > 500) throw Invalid("WritingStyle.BatchSize must be between 1 and 500.");
         if (string.IsNullOrWhiteSpace(options.WritingStyle.DatabasePath) || string.IsNullOrWhiteSpace(options.WritingStyle.ProfilePath) || string.IsNullOrWhiteSpace(options.WritingStyle.ProfileHistoryPath)) throw Invalid("WritingStyle database and profile paths are required.");
         if (options.WritingStyle.DelayBetweenBatchesMilliseconds is < 0 or > 10_000) throw Invalid("WritingStyle.DelayBetweenBatchesMilliseconds must be between 0 and 10000.");

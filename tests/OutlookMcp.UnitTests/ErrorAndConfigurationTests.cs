@@ -41,8 +41,20 @@ public sealed class ErrorAndConfigurationTests
         var options = new OutlookMcpOptions();
         Assert.Equal(3, options.CalendarSync.DefaultMonthsAhead);
         Assert.Null(options.CalendarSync.SourceCalendarFolderId);
-        Assert.Null(options.CalendarSync.TargetCalendarFolderId);
+        Assert.Null(options.CalendarSync.ClientId);
+        Assert.Equal("common", options.CalendarSync.TenantId);
         OutlookMcpOptionsValidator.Validate(options);
+    }
+
+    [Fact]
+    public void Configuration_RejectsEmptyCalendarSyncTenantAndCachePath()
+    {
+        var options = new OutlookMcpOptions();
+        options.CalendarSync.TenantId = " ";
+        Assert.Throws<OutlookMcpException>(() => OutlookMcpOptionsValidator.Validate(options));
+        options.CalendarSync.TenantId = "common";
+        options.CalendarSync.TokenCacheDirectory = "";
+        Assert.Throws<OutlookMcpException>(() => OutlookMcpOptionsValidator.Validate(options));
     }
 
     [Theory]

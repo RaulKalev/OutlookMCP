@@ -159,6 +159,6 @@ public sealed class WritingStyleCoordinatorTests : IDisposable
         public Task<FolderRuleAnalysisDto> AnalyzeFolderForRulesAsync(AnalyzeFolderRulesRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<CreateFolderRuleResultDto> CreateFolderRuleAsync(CreateFolderRuleRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<IReadOnlyList<CalendarFolderDto>> ListCalendarFoldersAsync(string? storeId, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<CalendarSyncResultDto> SyncCalendarAsync(SyncCalendarRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<CalendarOccurrenceReadResult> ReadCalendarOccurrencesAsync(string sourceFolderId, string? sourceStoreId, DateTimeOffset windowStart, DateTimeOffset windowEnd, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 }

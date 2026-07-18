@@ -1,12 +1,13 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using OutlookMcp.Application.Abstractions;
+using OutlookMcp.Application.Services;
 using OutlookMcp.Contracts;
 
 namespace OutlookMcp.Server.Mcp;
 
 [McpServerToolType]
-public sealed class OutlookTools(IOutlookGateway outlook, ToolExecutor executor)
+public sealed class OutlookTools(IOutlookGateway outlook, IExchangeCalendarGateway exchange, CalendarSyncCoordinator calendarSync, ToolExecutor executor)
 {
     [McpServerTool(Name = "outlook_get_status"), Description("Checks the local Outlook Classic connection without exposing email content. Use first when Outlook availability is uncertain. This tool is read-only.")]
     public Task<ToolResponse<OutlookStatusDto>> GetStatus(CancellationToken cancellationToken) =>
@@ -149,15 +150,25 @@ public sealed class OutlookTools(IOutlookGateway outlook, ToolExecutor executor)
         [Description("Optional store identifier to restrict the listing.")] string? store_id = null,
         CancellationToken cancellationToken = default) => executor.RunAsync(() => outlook.ListCalendarFoldersAsync(store_id, cancellationToken));
 
-    [McpServerTool(Name = "outlook_sync_calendar"), Description("One-way sync of upcoming events from a source (local) calendar into a dedicated sync-owned target (for example Exchange) calendar. Events are copied with full fidelity, changed events are refreshed, and window events removed from the source are deleted from the target; the source calendar is never modified. Calendar IDs come from outlook_list_calendars or from CalendarSync defaults in config.json. dry_run defaults to true and makes no changes; show the planned actions to the user and set dry_run=false only after confirmation. Never sends invitations.")]
+    [McpServerTool(Name = "outlook_exchange_login"), Description("Starts the one-time Exchange Online sign-in using the OAuth device-code flow. Returns a microsoft.com verification URL and short code; show both to the user so they can approve access in any browser. Tokens are cached and refreshed silently afterwards. Check completion with outlook_exchange_auth_status.")]
+    public Task<ToolResponse<ExchangeLoginDto>> ExchangeLogin(CancellationToken cancellationToken = default) =>
+        executor.RunAsync(() => exchange.BeginDeviceCodeLoginAsync(cancellationToken));
+
+    [McpServerTool(Name = "outlook_exchange_auth_status"), Description("Reports the Exchange Online sign-in state: signed_in, login_pending (device code still waiting for the user), or signed_out. This tool is read-only.")]
+    public Task<ToolResponse<ExchangeAuthStatusDto>> ExchangeAuthStatus(CancellationToken cancellationToken = default) =>
+        executor.RunAsync(() => exchange.GetAuthStatusAsync(cancellationToken));
+
+    [McpServerTool(Name = "outlook_exchange_logout"), Description("Signs the Exchange Online account out and removes its cached tokens. Use before switching accounts.")]
+    public Task<ToolResponse<ExchangeAuthStatusDto>> ExchangeLogout(CancellationToken cancellationToken = default) =>
+        executor.RunAsync(() => exchange.LogoutAsync(cancellationToken));
+
+    [McpServerTool(Name = "outlook_sync_calendar"), Description("One-way sync of upcoming events from a local Outlook calendar into the signed-in Exchange Online account's calendar via the Microsoft Graph API. Events are copied with their details, recurring series are expanded into individual occurrences inside the window, changed events are refreshed, and window events removed locally are deleted on Exchange; the local calendar is never modified and no invitations are ever sent. The Exchange calendar must be dedicated to this sync. Requires outlook_exchange_login first. dry_run defaults to true and makes no changes; show the planned actions to the user and set dry_run=false only after confirmation.")]
     public Task<ToolResponse<CalendarSyncResultDto>> SyncCalendar(
-        [Description("Source calendar folder identifier. Falls back to CalendarSync.SourceCalendarFolderId in config.json.")] string? source_calendar_folder_id = null,
+        [Description("Local source calendar folder identifier from outlook_list_calendars. Falls back to CalendarSync.SourceCalendarFolderId in config.json.")] string? source_calendar_folder_id = null,
         [Description("Optional store identifier of the source calendar.")] string? source_store_id = null,
-        [Description("Target calendar folder identifier. The target must be dedicated to this sync because unmatched window events there are deleted. Falls back to CalendarSync.TargetCalendarFolderId in config.json.")] string? target_calendar_folder_id = null,
-        [Description("Optional store identifier of the target calendar.")] string? target_store_id = null,
         [Description("How many months ahead of today to sync. Defaults to the configured CalendarSync.DefaultMonthsAhead (3).")] int? months_ahead = null,
-        [Description("When true, reports every planned add, update, and delete without changing Outlook. Defaults to true.")] bool dry_run = true,
-        CancellationToken cancellationToken = default) => executor.RunAsync(() => outlook.SyncCalendarAsync(new(source_calendar_folder_id, source_store_id, target_calendar_folder_id, target_store_id, months_ahead, dry_run), cancellationToken));
+        [Description("When true, reports every planned add, update, and delete without changing anything. Defaults to true.")] bool dry_run = true,
+        CancellationToken cancellationToken = default) => executor.RunAsync(() => calendarSync.SyncAsync(new(source_calendar_folder_id, source_store_id, months_ahead, dry_run), cancellationToken));
 
     [McpServerTool(Name = "outlook_create_draft"), Description("Creates and saves a new unsent Outlook draft. It never sends the message. The user must review and send the draft manually.")]
     public Task<ToolResponse<DraftDto>> CreateDraft(

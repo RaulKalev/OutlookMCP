@@ -58,8 +58,11 @@ The table below describes the complete `full` profile. For lower model-credit us
 | `outlook_move_emails` | Dry-run-first bulk move with fresh post-move identifiers |
 | `outlook_analyze_folder_for_rules` | Read-only representative folder sample and recurring sender signals |
 | `outlook_create_folder_rule` | Dry-run-first receive rule that moves future matching mail |
-| `outlook_list_calendars` | Read-only calendar folder enumeration with default-calendar marking |
-| `outlook_sync_calendar` | Dry-run-first one-way calendar sync into a dedicated target calendar |
+| `outlook_list_calendars` | Read-only local calendar folder enumeration with default-calendar marking |
+| `outlook_exchange_login` | Starts the one-time Exchange Online device-code sign-in |
+| `outlook_exchange_auth_status` | Read-only Exchange sign-in state |
+| `outlook_exchange_logout` | Signs the Exchange account out and clears cached tokens |
+| `outlook_sync_calendar` | Dry-run-first one-way sync of local calendar events to Exchange Online via Microsoft Graph |
 | `outlook_create_draft` | Creates an unsent draft |
 | `outlook_create_reply_draft` | Creates an unsent Reply/Reply All draft |
 | `outlook_create_forward_draft` | Creates an unsent forward draft |
@@ -91,23 +94,35 @@ This workflow lets the MCP client reason over representative mail already filed 
 
 Within a rule, multiple values in the same condition list are alternatives (OR). Different non-empty condition groups are cumulative (AND). For example, two senders plus one subject phrase means `(sender A OR sender B) AND subject phrase`. Use separate rules for alternative sender-and-phrase combinations. Created rules apply to future received mail and never retroactively move existing messages. `stop_processing_more_rules` defaults to false because enabling it can change the behavior of later Outlook rules.
 
-### One-way calendar sync
+### One-way calendar sync to Exchange Online
 
-`outlook_sync_calendar` mirrors upcoming events from a source calendar (typically a local/PST calendar) into a target calendar (typically an Exchange calendar) that is dedicated to this sync:
+`outlook_sync_calendar` mirrors upcoming events from a local Outlook calendar (for example a PST calendar) into the calendar of an Exchange Online account that is **not** configured in the local Outlook profile. The Exchange side is reached through the Microsoft Graph API with a one-time device-code sign-in.
 
-1. Resolve both calendars once with `outlook_list_calendars`, or store them permanently under `CalendarSync` in `config.json` so the tool runs without arguments.
-2. Call `outlook_sync_calendar` with `dry_run: true` (the default). The result lists every planned `add`, `update`, and `delete` with subject and times, plus warnings.
+One-time setup:
+
+1. Register a free Entra ID application so Microsoft can identify this tool during sign-in:
+   - Open <https://entra.microsoft.com> → Identity → Applications → App registrations → **New registration**.
+   - Name it (for example `Outlook MCP Calendar Sync`), choose the supported account types that match the Exchange account (single tenant is fine when the account belongs to your organization), and register. No redirect URI is needed.
+   - Under **Authentication**, set **Allow public client flows** to **Yes** and save.
+   - Under **API permissions**, add **Microsoft Graph → Delegated → Calendars.ReadWrite**. Have an admin grant consent if the tenant requires it.
+   - Copy the **Application (client) ID** from the overview page into `CalendarSync.ClientId` in `config.json`. Set `CalendarSync.TenantId` to your tenant ID, or leave `common` to allow any account type the registration supports.
+2. Call `outlook_exchange_login`. It returns a `microsoft.com/devicelogin` URL and a short code; open the URL in any browser, enter the code, sign in with the Exchange account, and approve the calendar permission. `outlook_exchange_auth_status` confirms completion. Tokens are cached (encrypted with DPAPI on Windows) and refresh silently, so this is done once.
+
+Syncing:
+
+1. Resolve the local source calendar once with `outlook_list_calendars`, or store it under `CalendarSync.SourceCalendarFolderId` in `config.json` so a plain "sync my calendars" needs no arguments.
+2. Call `outlook_sync_calendar` with `dry_run: true` (the default). The result lists every planned `add`, `update`, and `delete` with subject and times, names the signed-in account, and includes warnings.
 3. Show the plan to the user and apply it with `dry_run: false` only after confirmation.
 
 Behavioral guarantees:
 
-- The source calendar is never modified; all writes and deletes happen only on the target calendar.
-- Events are copied natively (`Copy` + `Move`), so body, location, links, categories, reminders, attachments, and recurrence patterns arrive intact. Meetings are copied as calendar data only; invitations, responses, and cancellations are never sent.
-- Each copy is stamped with hidden `OutlookMcpSyncSourceId`/`OutlookMcpSyncSourceModified` user properties. On later runs these tags identify existing copies, refresh events whose source changed, and delete window events whose source was removed or cancelled.
-- The window runs from today's local midnight through `months_ahead` months (default `CalendarSync.DefaultMonthsAhead`, 3). Target events entirely outside the window are left alone, so history is preserved.
-- Recurring series are matched while active anywhere in the window and copied as complete series, including exceptions; an open-ended series therefore also places occurrences beyond the window boundary. This is reported as a warning.
-- Because the target calendar is treated as sync-owned, in-window target events without a sync tag are also pruned; the dry run lists them first.
-- If either calendar exceeds `CalendarSync.MaximumItemsScanned`, the sync refuses to run rather than compare an incomplete picture.
+- The local calendar is never modified; all writes and deletes happen only on the Exchange calendar of the signed-in account, which is treated as sync-owned. By default this is the account's main calendar, so use a dedicated Exchange account (or point `CalendarSync.TargetCalendarId` at a secondary calendar).
+- Events are copied with subject, plain-text body (links preserved as text), location, categories, reminder, busy status, sensitivity, and all-day status. Attendee lists are never written, so Graph can never send invitations, responses, or cancellations.
+- Recurring series are expanded into individual events inside the window; cancelled, moved, or edited single occurrences follow automatically on the next sync.
+- Each created event carries `OutlookMcpSyncSourceId`/`OutlookMcpSyncSourceModified` extended properties. Later runs use these tags to add only missing events, refresh events whose local original changed, and delete window events whose local original was removed or cancelled.
+- The window runs from today's local midnight through `months_ahead` months (default `CalendarSync.DefaultMonthsAhead`, 3). Exchange events entirely outside the window are left alone, so past history is preserved.
+- In-window Exchange events without a sync tag are also pruned; the dry run lists them first.
+- If either side exceeds `CalendarSync.MaximumItemsScanned`, the sync refuses to run rather than compare an incomplete picture.
 
 ## Prerequisites
 
@@ -263,16 +278,16 @@ The server writes protocol messages only to stdout. Structured logs go to rollin
 
 ### Tool profiles and model-credit usage
 
-MCP clients commonly include every advertised tool schema in model context. Use `--tool-profile compact` for normal search, bounded batch reading, selected-mail access, related-mail lookup, attachment listing, calendar sync, and unsent draft creation. It advertises eleven smaller tools and returns reduced search/read DTOs with conservative defaults.
+MCP clients commonly include every advertised tool schema in model context. Use `--tool-profile compact` for normal search, bounded batch reading, selected-mail access, related-mail lookup, attachment listing, calendar sync, and unsent draft creation. It advertises fourteen smaller tools and returns reduced search/read DTOs with conservative defaults.
 
 Other profiles are available when a task needs them:
 
 | Profile | Advertised tools | Use for |
 |---|---:|---|
-| `compact` | 11 | Normal reading, drafting, and calendar sync with the lowest schema overhead |
-| `mail` | 21 | Advanced search/read options, folder moves, filing-rule learning, calendar sync, and attachment saving |
+| `compact` | 14 | Normal reading, drafting, and calendar sync with the lowest schema overhead |
+| `mail` | 24 | Advanced search/read options, folder moves, filing-rule learning, calendar sync, and attachment saving |
 | `style` | 11 | Writing-style index and profile maintenance only |
-| `full` | 32 | Every capability; default when `--tool-profile` is omitted |
+| `full` | 35 | Every capability; default when `--tool-profile` is omitted |
 
 Keep `compact` configured most of the time and temporarily switch the argument to `mail`, `style`, or `full` only when that capability is needed. The profile changes only which MCP tools are advertised; server-side safety checks remain unchanged.
 
@@ -299,13 +314,15 @@ See [config.sample.json](src/OutlookMcp.Server/config.sample.json). Configuratio
     "MaximumBatchSize": 100
   },
   "CalendarSync": {
+    "ClientId": null,
+    "TenantId": "common",
     "SourceCalendarFolderId": null,
     "SourceStoreId": null,
-    "TargetCalendarFolderId": null,
-    "TargetStoreId": null,
+    "TargetCalendarId": null,
     "DefaultMonthsAhead": 3,
     "MaximumMonthsAhead": 24,
-    "MaximumItemsScanned": 2500
+    "MaximumItemsScanned": 2500,
+    "TokenCacheDirectory": "%APPDATA%\\EULE\\OutlookMcp\\Exchange"
   },
   "WritingStyle": {
     "Enabled": true,
@@ -347,7 +364,7 @@ See [config.sample.json](src/OutlookMcp.Server/config.sample.json). Configuratio
 
 An empty `AllowedStores` list exposes all profile stores except blocked folders. To restrict stores, enter exact `store_id` values from `outlook_list_stores` or exact display names. Environment variables in attachment directories are expanded. Existing filesystem links/junctions in attachment destination paths are rejected.
 
-The `CalendarSync` identifiers are optional defaults for `outlook_sync_calendar`; fill them with values from `outlook_list_calendars` so a plain "sync my calendars" request needs no arguments. Explicit tool arguments always override these defaults.
+`CalendarSync.ClientId` is the Entra ID app registration used for the Exchange sign-in (see the calendar sync section). `SourceCalendarFolderId` is an optional default for `outlook_sync_calendar`; fill it with a value from `outlook_list_calendars` so a plain "sync my calendars" request needs no arguments. `TargetCalendarId` selects a specific Exchange calendar instead of the signed-in account's default calendar. Explicit tool arguments always override these defaults.
 
 ## Local writing-style system
 
@@ -444,7 +461,7 @@ Use an absolute path, quote/escape it according to the client format, run `--ver
 - Filing-rule historical matching is representative rather than exhaustive. Outlook uses substring matching for sender-address and text conditions, and Outlook or the mail provider may classify some move rules as client-only, requiring Outlook Classic to be running.
 - Writing-style sync detects new/modified items through Outlook timestamps and reconciles lightweight current EntryIDs to report missing indexed items. An IMAP EntryID change can appear as one missing old row plus one new row when Outlook exposes no reliable identity link; reconciliation never deletes local history or changes the mailbox.
 - Authored-text, recurring signature, and disclaimer detection is heuristic. Quality/confidence indicators are exposed so ambiguous items have less influence and can be reviewed.
-- Calendar sync copies events with their reminders, so an event can ring from both calendars when both are active in the same profile. Update detection relies on Outlook's `LastModificationTime`, so a provider resynchronisation can cause already-mirrored events to be refreshed once.
+- Calendar sync writes plain-text event bodies (URLs stay as text) and omits attendee lists by design so the Graph API can never send invitations. Update detection relies on Outlook's `LastModificationTime`, so a provider resynchronisation can cause already-mirrored events to be refreshed once, and editing one occurrence of a series refreshes that window's other occurrences too.
 - Cancellation cannot interrupt an in-flight COM call safely; it cancels the caller's wait while the single STA worker finishes that call.
 - HTML support is intentionally opt-in and should remain disabled unless required.
 

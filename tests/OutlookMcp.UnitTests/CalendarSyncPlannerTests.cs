@@ -32,7 +32,7 @@ public sealed class CalendarSyncPlannerTests
     {
         var plan = CalendarSyncPlanner.Plan([Source("s1", "key-1", "stamp-new")], [Target("t1", "key-1", "stamp-old")]);
         var update = Assert.Single(plan.Updates);
-        Assert.Equal("s1", update.Source.EntryId);
+        Assert.Equal("key-1", update.Source.SyncKey);
         Assert.Equal("t1", update.Target.EntryId);
         Assert.Empty(plan.Adds);
         Assert.Empty(plan.Deletes);
@@ -93,7 +93,7 @@ public sealed class CalendarSyncPlannerTests
             [Target("t1", "key-1", "stamp-a")]);
         Assert.Equal(1, plan.UnchangedCount);
         var add = Assert.Single(plan.Adds);
-        Assert.Equal("s2", add.EntryId);
+        Assert.Equal("Subject s2", add.Subject);
         Assert.Empty(plan.Deletes);
     }
 
@@ -148,8 +148,9 @@ public sealed class CalendarSyncPlannerTests
             true, false, null, WindowStart, WindowEnd));
     }
 
-    private static SourceCalendarEvent Source(string entryId, string syncKey, string stamp = "stamp") =>
-        new(entryId, syncKey, stamp, "Subject " + entryId, WindowStart.AddDays(1), WindowStart.AddDays(1).AddHours(1), false, false, false);
+    private static SourceCalendarOccurrence Source(string entryId, string syncKey, string stamp = "stamp") =>
+        new(syncKey, stamp, "Subject " + entryId, WindowStart.AddDays(1), WindowStart.AddDays(1).AddHours(1),
+            false, "FLE Standard Time", null, null, [], null, "busy", "normal", false, false);
 
     private static TargetCalendarEvent Target(string entryId, string? syncKey, string? stamp) =>
         new(entryId, syncKey, stamp, "Subject " + entryId, WindowStart.AddDays(1), WindowStart.AddDays(1).AddHours(1), false, true);
