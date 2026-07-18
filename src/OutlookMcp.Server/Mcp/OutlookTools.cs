@@ -144,6 +144,21 @@ public sealed class OutlookTools(IOutlookGateway outlook, ToolExecutor executor)
         [Description("Validate and evaluate only. Defaults to true. Set false only after the user confirms the exact rule.")] bool dry_run = true,
         CancellationToken cancellationToken = default) => executor.RunAsync(() => outlook.CreateFolderRuleAsync(new(store_id, destination_folder_id, rule_name, sender_address_contains, subject_contains, body_contains, body_or_subject_contains, stop_processing_more_rules, dry_run), cancellationToken));
 
+    [McpServerTool(Name = "outlook_list_calendars"), Description("Lists calendar folders in allowed Outlook stores, marking each store's default calendar. Use this to choose the source and target calendars for outlook_sync_calendar. This tool is read-only.")]
+    public Task<ToolResponse<IReadOnlyList<CalendarFolderDto>>> ListCalendars(
+        [Description("Optional store identifier to restrict the listing.")] string? store_id = null,
+        CancellationToken cancellationToken = default) => executor.RunAsync(() => outlook.ListCalendarFoldersAsync(store_id, cancellationToken));
+
+    [McpServerTool(Name = "outlook_sync_calendar"), Description("One-way sync of upcoming events from a source (local) calendar into a dedicated sync-owned target (for example Exchange) calendar. Events are copied with full fidelity, changed events are refreshed, and window events removed from the source are deleted from the target; the source calendar is never modified. Calendar IDs come from outlook_list_calendars or from CalendarSync defaults in config.json. dry_run defaults to true and makes no changes; show the planned actions to the user and set dry_run=false only after confirmation. Never sends invitations.")]
+    public Task<ToolResponse<CalendarSyncResultDto>> SyncCalendar(
+        [Description("Source calendar folder identifier. Falls back to CalendarSync.SourceCalendarFolderId in config.json.")] string? source_calendar_folder_id = null,
+        [Description("Optional store identifier of the source calendar.")] string? source_store_id = null,
+        [Description("Target calendar folder identifier. The target must be dedicated to this sync because unmatched window events there are deleted. Falls back to CalendarSync.TargetCalendarFolderId in config.json.")] string? target_calendar_folder_id = null,
+        [Description("Optional store identifier of the target calendar.")] string? target_store_id = null,
+        [Description("How many months ahead of today to sync. Defaults to the configured CalendarSync.DefaultMonthsAhead (3).")] int? months_ahead = null,
+        [Description("When true, reports every planned add, update, and delete without changing Outlook. Defaults to true.")] bool dry_run = true,
+        CancellationToken cancellationToken = default) => executor.RunAsync(() => outlook.SyncCalendarAsync(new(source_calendar_folder_id, source_store_id, target_calendar_folder_id, target_store_id, months_ahead, dry_run), cancellationToken));
+
     [McpServerTool(Name = "outlook_create_draft"), Description("Creates and saves a new unsent Outlook draft. It never sends the message. The user must review and send the draft manually.")]
     public Task<ToolResponse<DraftDto>> CreateDraft(
         string subject, string body, string body_format = "plain_text", string? to = null, string? cc = null, string? bcc = null,

@@ -87,6 +87,23 @@ public sealed class OutlookCompactTools(IOutlookGateway outlook, ToolExecutor ex
         CancellationToken cancellationToken = default) =>
         executor.RunAsync(() => outlook.ListAttachmentsAsync(message_id, store_id, cancellationToken));
 
+    [McpServerTool(Name = "outlook_list_calendars"), Description("List calendar folders per store, marking defaults. Read-only.")]
+    public Task<ToolResponse<IReadOnlyList<CalendarFolderDto>>> ListCalendars(
+        string? store_id = null,
+        CancellationToken cancellationToken = default) =>
+        executor.RunAsync(() => outlook.ListCalendarFoldersAsync(store_id, cancellationToken));
+
+    [McpServerTool(Name = "outlook_sync_calendar"), Description("One-way sync of upcoming events from a source calendar into a dedicated sync-owned target calendar. Adds, refreshes, and prunes on the target only; never modifies the source and never sends invitations. dry_run defaults to true; apply only after the user confirms the plan.")]
+    public Task<ToolResponse<CalendarSyncResultDto>> SyncCalendar(
+        string? source_calendar_folder_id = null,
+        string? source_store_id = null,
+        [Description("Must be dedicated to this sync; unmatched window events there are deleted.")] string? target_calendar_folder_id = null,
+        string? target_store_id = null,
+        [Description("Months ahead of today; default from config (3).")] int? months_ahead = null,
+        bool dry_run = true,
+        CancellationToken cancellationToken = default) => executor.RunAsync(() => outlook.SyncCalendarAsync(
+            new(source_calendar_folder_id, source_store_id, target_calendar_folder_id, target_store_id, months_ahead, dry_run), cancellationToken));
+
     [McpServerTool(Name = "outlook_create_draft"), Description("Save a new unsent draft for user review. Never sends.")]
     public Task<ToolResponse<DraftDto>> CreateDraft(
         string subject,

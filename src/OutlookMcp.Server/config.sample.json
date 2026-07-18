@@ -15,6 +15,15 @@
     "MaximumRecursiveFolders": 1000,
     "MaximumBatchSize": 100
   },
+  "CalendarSync": {
+    "SourceCalendarFolderId": null,
+    "SourceStoreId": null,
+    "TargetCalendarFolderId": null,
+    "TargetStoreId": null,
+    "DefaultMonthsAhead": 3,
+    "MaximumMonthsAhead": 24,
+    "MaximumItemsScanned": 2500
+  },
   "WritingStyle": {
     "Enabled": true,
     "DatabasePath": "%APPDATA%\\EULE\\OutlookMcp\\WritingStyle\\sent-email-index.db",

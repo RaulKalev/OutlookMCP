@@ -3,6 +3,7 @@ namespace OutlookMcp.Application.Configuration;
 public sealed class OutlookMcpOptions
 {
     public OutlookOptions Outlook { get; set; } = new();
+    public CalendarSyncOptions CalendarSync { get; set; } = new();
     public WritingStyleOptions WritingStyle { get; set; } = new();
     public LoggingOptions Logging { get; set; } = new();
 }
@@ -23,6 +24,17 @@ public sealed class OutlookOptions
     public bool AllowSelectedEmailAccess { get; set; } = true;
     public int MaximumRecursiveFolders { get; set; } = 1_000;
     public int MaximumBatchSize { get; set; } = 100;
+}
+
+public sealed class CalendarSyncOptions
+{
+    public string? SourceCalendarFolderId { get; set; }
+    public string? SourceStoreId { get; set; }
+    public string? TargetCalendarFolderId { get; set; }
+    public string? TargetStoreId { get; set; }
+    public int DefaultMonthsAhead { get; set; } = 3;
+    public int MaximumMonthsAhead { get; set; } = 24;
+    public int MaximumItemsScanned { get; set; } = 2_500;
 }
 
 public sealed class LoggingOptions

@@ -58,6 +58,8 @@ The table below describes the complete `full` profile. For lower model-credit us
 | `outlook_move_emails` | Dry-run-first bulk move with fresh post-move identifiers |
 | `outlook_analyze_folder_for_rules` | Read-only representative folder sample and recurring sender signals |
 | `outlook_create_folder_rule` | Dry-run-first receive rule that moves future matching mail |
+| `outlook_list_calendars` | Read-only calendar folder enumeration with default-calendar marking |
+| `outlook_sync_calendar` | Dry-run-first one-way calendar sync into a dedicated target calendar |
 | `outlook_create_draft` | Creates an unsent draft |
 | `outlook_create_reply_draft` | Creates an unsent Reply/Reply All draft |
 | `outlook_create_forward_draft` | Creates an unsent forward draft |
@@ -88,6 +90,24 @@ This workflow lets the MCP client reason over representative mail already filed 
 5. Show the user the exact rule name, destination, conditions, match estimates, and warnings. Create it with `dry_run: false` only after the user explicitly confirms that proposal.
 
 Within a rule, multiple values in the same condition list are alternatives (OR). Different non-empty condition groups are cumulative (AND). For example, two senders plus one subject phrase means `(sender A OR sender B) AND subject phrase`. Use separate rules for alternative sender-and-phrase combinations. Created rules apply to future received mail and never retroactively move existing messages. `stop_processing_more_rules` defaults to false because enabling it can change the behavior of later Outlook rules.
+
+### One-way calendar sync
+
+`outlook_sync_calendar` mirrors upcoming events from a source calendar (typically a local/PST calendar) into a target calendar (typically an Exchange calendar) that is dedicated to this sync:
+
+1. Resolve both calendars once with `outlook_list_calendars`, or store them permanently under `CalendarSync` in `config.json` so the tool runs without arguments.
+2. Call `outlook_sync_calendar` with `dry_run: true` (the default). The result lists every planned `add`, `update`, and `delete` with subject and times, plus warnings.
+3. Show the plan to the user and apply it with `dry_run: false` only after confirmation.
+
+Behavioral guarantees:
+
+- The source calendar is never modified; all writes and deletes happen only on the target calendar.
+- Events are copied natively (`Copy` + `Move`), so body, location, links, categories, reminders, attachments, and recurrence patterns arrive intact. Meetings are copied as calendar data only; invitations, responses, and cancellations are never sent.
+- Each copy is stamped with hidden `OutlookMcpSyncSourceId`/`OutlookMcpSyncSourceModified` user properties. On later runs these tags identify existing copies, refresh events whose source changed, and delete window events whose source was removed or cancelled.
+- The window runs from today's local midnight through `months_ahead` months (default `CalendarSync.DefaultMonthsAhead`, 3). Target events entirely outside the window are left alone, so history is preserved.
+- Recurring series are matched while active anywhere in the window and copied as complete series, including exceptions; an open-ended series therefore also places occurrences beyond the window boundary. This is reported as a warning.
+- Because the target calendar is treated as sync-owned, in-window target events without a sync tag are also pruned; the dry run lists them first.
+- If either calendar exceeds `CalendarSync.MaximumItemsScanned`, the sync refuses to run rather than compare an incomplete picture.
 
 ## Prerequisites
 
@@ -243,16 +263,16 @@ The server writes protocol messages only to stdout. Structured logs go to rollin
 
 ### Tool profiles and model-credit usage
 
-MCP clients commonly include every advertised tool schema in model context. Use `--tool-profile compact` for normal search, bounded batch reading, selected-mail access, related-mail lookup, attachment listing, and unsent draft creation. It advertises nine smaller tools and returns reduced search/read DTOs with conservative defaults.
+MCP clients commonly include every advertised tool schema in model context. Use `--tool-profile compact` for normal search, bounded batch reading, selected-mail access, related-mail lookup, attachment listing, calendar sync, and unsent draft creation. It advertises eleven smaller tools and returns reduced search/read DTOs with conservative defaults.
 
 Other profiles are available when a task needs them:
 
 | Profile | Advertised tools | Use for |
 |---|---:|---|
-| `compact` | 9 | Normal reading and drafting with the lowest schema overhead |
-| `mail` | 19 | Advanced search/read options, folder moves, filing-rule learning, and attachment saving |
+| `compact` | 11 | Normal reading, drafting, and calendar sync with the lowest schema overhead |
+| `mail` | 21 | Advanced search/read options, folder moves, filing-rule learning, calendar sync, and attachment saving |
 | `style` | 11 | Writing-style index and profile maintenance only |
-| `full` | 30 | Every capability; default when `--tool-profile` is omitted |
+| `full` | 32 | Every capability; default when `--tool-profile` is omitted |
 
 Keep `compact` configured most of the time and temporarily switch the argument to `mail`, `style`, or `full` only when that capability is needed. The profile changes only which MCP tools are advertised; server-side safety checks remain unchanged.
 
@@ -277,6 +297,15 @@ See [config.sample.json](src/OutlookMcp.Server/config.sample.json). Configuratio
     "AllowSelectedEmailAccess": true,
     "MaximumRecursiveFolders": 1000,
     "MaximumBatchSize": 100
+  },
+  "CalendarSync": {
+    "SourceCalendarFolderId": null,
+    "SourceStoreId": null,
+    "TargetCalendarFolderId": null,
+    "TargetStoreId": null,
+    "DefaultMonthsAhead": 3,
+    "MaximumMonthsAhead": 24,
+    "MaximumItemsScanned": 2500
   },
   "WritingStyle": {
     "Enabled": true,
@@ -317,6 +346,8 @@ See [config.sample.json](src/OutlookMcp.Server/config.sample.json). Configuratio
 ```
 
 An empty `AllowedStores` list exposes all profile stores except blocked folders. To restrict stores, enter exact `store_id` values from `outlook_list_stores` or exact display names. Environment variables in attachment directories are expanded. Existing filesystem links/junctions in attachment destination paths are rejected.
+
+The `CalendarSync` identifiers are optional defaults for `outlook_sync_calendar`; fill them with values from `outlook_list_calendars` so a plain "sync my calendars" request needs no arguments. Explicit tool arguments always override these defaults.
 
 ## Local writing-style system
 
@@ -413,6 +444,7 @@ Use an absolute path, quote/escape it according to the client format, run `--ver
 - Filing-rule historical matching is representative rather than exhaustive. Outlook uses substring matching for sender-address and text conditions, and Outlook or the mail provider may classify some move rules as client-only, requiring Outlook Classic to be running.
 - Writing-style sync detects new/modified items through Outlook timestamps and reconciles lightweight current EntryIDs to report missing indexed items. An IMAP EntryID change can appear as one missing old row plus one new row when Outlook exposes no reliable identity link; reconciliation never deletes local history or changes the mailbox.
 - Authored-text, recurring signature, and disclaimer detection is heuristic. Quality/confidence indicators are exposed so ambiguous items have less influence and can be reviewed.
+- Calendar sync copies events with their reminders, so an event can ring from both calendars when both are active in the same profile. Update detection relies on Outlook's `LastModificationTime`, so a provider resynchronisation can cause already-mirrored events to be refreshed once.
 - Cancellation cannot interrupt an in-flight COM call safely; it cancels the caller's wait while the single STA worker finishes that call.
 - HTML support is intentionally opt-in and should remain disabled unless required.
 

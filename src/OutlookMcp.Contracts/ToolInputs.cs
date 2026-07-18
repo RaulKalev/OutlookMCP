@@ -35,6 +35,14 @@ public sealed record CreateForwardDraftRequest(string MessageId, string StoreId,
 public sealed record CreateFolderRequest(string StoreId, string DisplayName, string? ParentFolderId = null);
 public sealed record MoveEmailsRequest(IReadOnlyList<string> MessageIds, string StoreId, string DestinationFolderId, bool DryRun = true, bool ContinueOnError = true);
 public sealed record AnalyzeFolderRulesRequest(string StoreId, string FolderId, int SampleSize = 30, int MaxBodyCharacters = 1_500, bool IncludeBody = true);
+public sealed record SyncCalendarRequest(
+    string? SourceCalendarFolderId = null,
+    string? SourceStoreId = null,
+    string? TargetCalendarFolderId = null,
+    string? TargetStoreId = null,
+    int? MonthsAhead = null,
+    bool DryRun = true);
+
 public sealed record CreateFolderRuleRequest(
     string StoreId,
     string DestinationFolderId,
