@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
@@ -8,6 +8,7 @@
     <ProjectReference Include="..\..\src\OutlookMcp.Contracts\OutlookMcp.Contracts.csproj" />
     <ProjectReference Include="..\..\src\OutlookMcp.Application\OutlookMcp.Application.csproj" />
     <ProjectReference Include="..\..\src\OutlookMcp.Infrastructure\OutlookMcp.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\OutlookMcp.OutlookInterop\OutlookMcp.OutlookInterop.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2"><PrivateAssets>all</PrivateAssets></PackageReference>
