@@ -83,7 +83,8 @@ public static class GraphEventMapper
             ParseTime(element, "start"),
             ParseTime(element, "end"),
             type is not null && !string.Equals(type, "singleInstance", StringComparison.OrdinalIgnoreCase),
-            true);
+            true,
+            element.TryGetProperty("isAllDay", out var allDay) && allDay.ValueKind == JsonValueKind.True);
     }
 
     private static JsonObject TimeNode(DateTimeOffset value, string timeZoneId) => new()

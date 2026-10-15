@@ -53,7 +53,7 @@ public sealed class GraphCalendarClient(ExchangeTokenProvider tokens, OutlookMcp
         var result = new List<TargetCalendarEvent>();
         var expand = Uri.EscapeDataString($"singleValueExtendedProperties($filter=id eq '{GraphEventMapper.SourceIdPropertyId}' or id eq '{GraphEventMapper.SourceModifiedPropertyId}')");
         var url = $"{CalendarPath()}/calendarView?startDateTime={Uri.EscapeDataString(ToUtcText(windowStart))}&endDateTime={Uri.EscapeDataString(ToUtcText(windowEnd))}" +
-            $"&$top={PageSize}&$select=id,subject,start,end,type&$expand={expand}";
+            $"&$top={PageSize}&$select=id,subject,start,end,type,isAllDay&$expand={expand}";
         var pages = 0;
         while (url is not null)
         {

@@ -121,7 +121,8 @@ Behavioral guarantees:
 - Recurring series are expanded into individual events inside the window; cancelled, moved, or edited single occurrences follow automatically on the next sync.
 - Each created event carries `OutlookMcpSyncSourceId`/`OutlookMcpSyncSourceModified` extended properties. Later runs use these tags to add only missing events, refresh events whose local original changed, and delete window events whose local original was removed or cancelled.
 - The window runs from today's local midnight through `months_ahead` months (default `CalendarSync.DefaultMonthsAhead`, 3). Exchange events entirely outside the window are left alone, so past history is preserved.
-- In-window Exchange events without a sync tag are also pruned; the dry run lists them first.
+- A local event with no tagged copy is first matched to an existing Exchange event with the same subject (case and spacing ignored), start, and end (all-day events by date). Such copies are left untouched and counted in `matched_by_content_count`, so events already present in Exchange are neither duplicated nor deleted.
+- In-window Exchange events that match neither by tag nor by content are pruned; the dry run lists them first.
 - If either side exceeds `CalendarSync.MaximumItemsScanned`, the sync refuses to run rather than compare an incomplete picture.
 
 ## Prerequisites

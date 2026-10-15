@@ -90,5 +90,14 @@ public sealed class GraphEventMapperTests
         Assert.Null(parsed!.SyncKey);
         Assert.Null(parsed.SourceModifiedStamp);
         Assert.True(parsed.IsRecurring);
+        Assert.False(parsed.IsAllDay);
+    }
+
+    [Fact]
+    public void ParseEvent_ReadsAllDayFlag()
+    {
+        var json = """{ "id": "evt-3", "subject": "Holiday", "type": "singleInstance", "isAllDay": true }""";
+        using var document = JsonDocument.Parse(json);
+        Assert.True(GraphEventMapper.ParseEvent(document.RootElement)!.IsAllDay);
     }
 }

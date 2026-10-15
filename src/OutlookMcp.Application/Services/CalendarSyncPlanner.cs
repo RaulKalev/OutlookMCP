@@ -33,7 +33,8 @@ public sealed record TargetCalendarEvent(
     DateTimeOffset? Start,
     DateTimeOffset? End,
     bool IsRecurring,
-    bool InWindow);
+    bool InWindow,
+    bool IsAllDay = false);
 
 public sealed record CalendarSyncUpdate(SourceCalendarOccurrence Source, TargetCalendarEvent Target);
 
@@ -41,7 +42,8 @@ public sealed record CalendarSyncPlan(
     IReadOnlyList<SourceCalendarOccurrence> Adds,
     IReadOnlyList<CalendarSyncUpdate> Updates,
     IReadOnlyList<TargetCalendarEvent> Deletes,
-    int UnchangedCount);
+    int UnchangedCount,
+    int MatchedByContentCount = 0);
 
 /// <summary>The bounded outcome of expanding one local calendar's occurrences for the sync window.</summary>
 public sealed record CalendarOccurrenceReadResult(
@@ -52,7 +54,10 @@ public sealed record CalendarOccurrenceReadResult(
 /// <summary>
 /// Computes a one-way calendar sync plan. The source calendar is never modified; the plan
 /// only ever adds to, refreshes, or prunes the sync-owned target calendar. Target events are
-/// matched by the sync key stamped onto each copy; unmatched target events are deleted only
+/// matched by the sync key stamped onto each copy first; source occurrences left over are then
+/// matched to any remaining target event with the same subject, start, and end, so copies that
+/// already exist in Exchange (created by hand, by an invitation, or under an older key) are
+/// kept instead of being duplicated and deleted. Unmatched target events are deleted only
 /// when they fall inside the sync window, so history outside the window is left alone.
 /// </summary>
 public static class CalendarSyncPlanner
@@ -68,12 +73,13 @@ public static class CalendarSyncPlanner
             .GroupBy(value => value.SyncKey!, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => new Queue<TargetCalendarEvent>(group), StringComparer.Ordinal);
         var matchedEntryIds = new HashSet<string>(StringComparer.Ordinal);
+        var unmatchedSources = new List<SourceCalendarOccurrence>();
 
         foreach (var source in sourceEvents)
         {
             if (!candidatesByKey.TryGetValue(source.SyncKey, out var candidates) || candidates.Count == 0)
             {
-                adds.Add(source);
+                unmatchedSources.Add(source);
                 continue;
             }
 
@@ -83,13 +89,51 @@ public static class CalendarSyncPlanner
             else updates.Add(new CalendarSyncUpdate(source, target));
         }
 
+        var matchedByContent = 0;
+        var candidatesByContent = targetEvents
+            .Where(value => !matchedEntryIds.Contains(value.EntryId) && value.Start is not null)
+            .GroupBy(value => ContentKey(value.Subject, value.Start, value.End, value.IsAllDay), StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => new Queue<TargetCalendarEvent>(group), StringComparer.Ordinal);
+        foreach (var source in unmatchedSources)
+        {
+            if (source.Start is not null
+                && candidatesByContent.TryGetValue(ContentKey(source.Subject, source.Start, source.End, source.IsAllDay), out var candidates)
+                && candidates.Count > 0)
+            {
+                matchedEntryIds.Add(candidates.Dequeue().EntryId);
+                matchedByContent++;
+                unchanged++;
+            }
+            else
+            {
+                adds.Add(source);
+            }
+        }
+
         foreach (var target in targetEvents)
         {
             if (!matchedEntryIds.Contains(target.EntryId) && target.InWindow) deletes.Add(target);
         }
 
-        return new CalendarSyncPlan(adds, updates, deletes, unchanged);
+        return new CalendarSyncPlan(adds, updates, deletes, unchanged, matchedByContent);
     }
+
+    /// <summary>
+    /// Identity used to recognise an existing target copy that carries no matching sync tag.
+    /// Timed events compare instants to the minute; all-day events compare calendar dates,
+    /// because Graph reports them as floating midnights rather than zone-converted instants.
+    /// </summary>
+    private static string ContentKey(string subject, DateTimeOffset? start, DateTimeOffset? end, bool isAllDay)
+    {
+        var effectiveEnd = end ?? start;
+        var times = isAllDay
+            ? $"D|{start!.Value.DateTime:yyyy-MM-dd}|{effectiveEnd!.Value.DateTime:yyyy-MM-dd}"
+            : $"T|{start!.Value.UtcDateTime:yyyy-MM-ddTHH:mm}|{effectiveEnd!.Value.UtcDateTime:yyyy-MM-ddTHH:mm}";
+        return times + "|" + SubjectKey(subject);
+    }
+
+    private static string SubjectKey(string subject) =>
+        string.Join(' ', subject.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
 
     /// <summary>
     /// Decides whether an event belongs to the sync window. Single events count when they

@@ -52,6 +52,7 @@ public sealed record CalendarSyncResultDto(
     [property: JsonPropertyName("updated_count")] int UpdatedCount,
     [property: JsonPropertyName("deleted_count")] int DeletedCount,
     [property: JsonPropertyName("unchanged_count")] int UnchangedCount,
+    [property: JsonPropertyName("matched_by_content_count")] int MatchedByContentCount,
     [property: JsonPropertyName("failed_count")] int FailedCount,
     [property: JsonPropertyName("items")] IReadOnlyList<CalendarSyncItemDto> Items,
     [property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings);
