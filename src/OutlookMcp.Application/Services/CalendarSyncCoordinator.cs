@@ -81,10 +81,10 @@ public sealed class CalendarSyncCoordinator(
         }
 
         logger.LogInformation(
-            "Calendar sync completed; DryRun={DryRun}, SourceEvents={SourceEvents}, Adds={Adds}, Updates={Updates}, Deletes={Deletes}, Unchanged={Unchanged}, Failed={Failed}",
-            request.DryRun, sourceRead.Occurrences.Count, plan.Adds.Count, plan.Updates.Count, plan.Deletes.Count, plan.UnchangedCount, failed);
+            "Calendar sync completed; DryRun={DryRun}, SourceEvents={SourceEvents}, Adds={Adds}, Updates={Updates}, Deletes={Deletes}, Unchanged={Unchanged}, MatchedByContent={MatchedByContent}, Failed={Failed}",
+            request.DryRun, sourceRead.Occurrences.Count, plan.Adds.Count, plan.Updates.Count, plan.Deletes.Count, plan.UnchangedCount, plan.MatchedByContentCount, failed);
         return new CalendarSyncResultDto(sourceRead.SourceCalendar, targetCalendar, windowStart, windowEnd, months, request.DryRun,
-            sourceRead.Occurrences.Count, plan.Adds.Count, plan.Updates.Count, plan.Deletes.Count, plan.UnchangedCount, failed, items, warnings);
+            sourceRead.Occurrences.Count, plan.Adds.Count, plan.Updates.Count, plan.Deletes.Count, plan.UnchangedCount, plan.MatchedByContentCount, failed, items, warnings);
     }
 
     private async Task<CalendarSyncItemDto> ApplyAsync(string action, string subject, DateTimeOffset? start, DateTimeOffset? end, bool fromSeries, Func<Task> operation, Action onFailure)
@@ -113,6 +113,7 @@ public sealed class CalendarSyncCoordinator(
         if (fromSeries > 0) warnings.Add($"{fromSeries} copied events are occurrences of recurring series, expanded into individual events within the sync window.");
         var meetings = copied.Count(value => value.IsMeeting);
         if (meetings > 0) warnings.Add($"{meetings} copied events are meetings; they are copied as plain calendar data without attendee lists, so no invitations, responses, or cancellations can ever be sent.");
+        if (plan.MatchedByContentCount > 0) warnings.Add($"{plan.MatchedByContentCount} local events already exist in Exchange without a matching sync tag; they were matched by subject, start, and end and left as they are.");
         var untaggedDeletes = plan.Deletes.Count(value => string.IsNullOrWhiteSpace(value.SyncKey));
         if (untaggedDeletes > 0) warnings.Add($"{untaggedDeletes} Exchange events were not created by this sync and fall inside the window, so they are planned for deletion. Review the dry-run item list before applying.");
         if (sourceSkipped > 0) warnings.Add($"{sourceSkipped} source calendar items could not be read and were skipped; their Exchange copies may be deleted until they become readable again.");

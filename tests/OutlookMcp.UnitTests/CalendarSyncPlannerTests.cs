@@ -97,6 +97,75 @@ public sealed class CalendarSyncPlannerTests
         Assert.Empty(plan.Deletes);
     }
 
+    [Fact]
+    public void Plan_MatchesExistingUntaggedCopyBySubjectAndTimes()
+    {
+        var source = Source("s1", "key-1") with { Subject = "Raemõisa kool ja spordihoone - hoone" };
+        var existing = Target("t1", null, null) with { Subject = "  raemõisa kool ja  spordihoone - hoone " };
+        var plan = CalendarSyncPlanner.Plan([source], [existing]);
+        Assert.Empty(plan.Adds);
+        Assert.Empty(plan.Deletes);
+        Assert.Empty(plan.Updates);
+        Assert.Equal(1, plan.UnchangedCount);
+        Assert.Equal(1, plan.MatchedByContentCount);
+    }
+
+    [Fact]
+    public void Plan_MatchesByContentAcrossTimeZoneOffsets()
+    {
+        var localStart = new DateTimeOffset(2026, 10, 15, 10, 30, 0, TimeSpan.FromHours(3));
+        var source = Source("s1", "key-1") with { Subject = "Review", Start = localStart, End = localStart.AddHours(1) };
+        var existing = Target("t1", null, null) with { Subject = "Review", Start = localStart.ToUniversalTime(), End = localStart.AddHours(1).ToUniversalTime() };
+        var plan = CalendarSyncPlanner.Plan([source], [existing]);
+        Assert.Empty(plan.Adds);
+        Assert.Empty(plan.Deletes);
+        Assert.Equal(1, plan.MatchedByContentCount);
+    }
+
+    [Fact]
+    public void Plan_MatchesAllDayEventsByCalendarDate()
+    {
+        var localMidnight = new DateTimeOffset(2026, 10, 15, 0, 0, 0, TimeSpan.FromHours(3));
+        var source = Source("s1", "key-1") with { Subject = "Holiday", Start = localMidnight, End = localMidnight.AddDays(1), IsAllDay = true };
+        var floating = new DateTimeOffset(2026, 10, 15, 0, 0, 0, TimeSpan.Zero);
+        var existing = Target("t1", null, null) with { Subject = "Holiday", Start = floating, End = floating.AddDays(1), IsAllDay = true };
+        var plan = CalendarSyncPlanner.Plan([source], [existing]);
+        Assert.Empty(plan.Adds);
+        Assert.Empty(plan.Deletes);
+        Assert.Equal(1, plan.MatchedByContentCount);
+    }
+
+    [Fact]
+    public void Plan_MatchesCopyTaggedWithStaleKeyByContent()
+    {
+        var plan = CalendarSyncPlanner.Plan([Source("s1", "key-new") with { Subject = "Subject t1" }], [Target("t1", "key-old", "stamp")]);
+        Assert.Empty(plan.Adds);
+        Assert.Empty(plan.Deletes);
+        Assert.Equal(1, plan.MatchedByContentCount);
+    }
+
+    [Fact]
+    public void Plan_DoesNotMatchByContentWhenTimesDiffer()
+    {
+        var source = Source("s1", "key-1") with { Subject = "Subject t1" };
+        var moved = Target("t1", null, null) with { Start = WindowStart.AddDays(2), End = WindowStart.AddDays(2).AddHours(1) };
+        var plan = CalendarSyncPlanner.Plan([source], [moved]);
+        Assert.Single(plan.Adds);
+        Assert.Equal("t1", Assert.Single(plan.Deletes).EntryId);
+        Assert.Equal(0, plan.MatchedByContentCount);
+    }
+
+    [Fact]
+    public void Plan_ContentMatchDoesNotStealTargetAlreadyMatchedByKey()
+    {
+        var plan = CalendarSyncPlanner.Plan(
+            [Source("s1", "key-1") with { Subject = "Same" }, Source("s2", "key-2") with { Subject = "Same" }],
+            [Target("t1", "key-1", "stamp") with { Subject = "Same" }]);
+        Assert.Equal(1, plan.UnchangedCount);
+        Assert.Equal(0, plan.MatchedByContentCount);
+        Assert.Equal("key-2", Assert.Single(plan.Adds).SyncKey);
+    }
+
     [Theory]
     [InlineData(1, 2, true)]
     [InlineData(-10, -5, false)]
