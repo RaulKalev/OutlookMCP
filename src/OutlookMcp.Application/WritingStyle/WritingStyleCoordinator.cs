@@ -64,6 +64,8 @@ public sealed class WritingStyleCoordinator : IDisposable
         try
         {
             var size = batchSize ?? _options.BatchSize;
+            var scanStartedAt = DateTimeOffset.UtcNow;
+            var wasComplete = IsTrue(await _repository.GetStateAsync(InitialScanComplete, cancellationToken).ConfigureAwait(false));
             var folders = await _gateway.DiscoverSentFoldersAsync(cancellationToken).ConfigureAwait(false);
             var checkpoints = (await _repository.GetCheckpointsAsync(cancellationToken).ConfigureAwait(false)).ToDictionary(value => (value.StoreId, value.FolderId));
             await _repository.SetStateAsync(InitialScanStarted, "true", cancellationToken).ConfigureAwait(false);
@@ -122,7 +124,9 @@ public sealed class WritingStyleCoordinator : IDisposable
             var all = await _repository.GetCheckpointsAsync(cancellationToken).ConfigureAwait(false);
             var complete = folders.Count > 0 && folders.All(folder => all.Any(value => value.StoreId == folder.StoreId && value.FolderId == folder.FolderId && value.Complete));
             await _repository.SetStateAsync(InitialScanComplete, complete ? "true" : "false", cancellationToken).ConfigureAwait(false);
-            if (complete) await _repository.SetStateAsync(LastSync, DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture), cancellationToken).ConfigureAwait(false);
+            // A maintenance re-run that only confirmed existing checkpoints read no mail, so it must not move the incremental-sync cutoff.
+            if (complete && (!wasComplete || processedThisRun > 0))
+                await _repository.SetStateAsync(LastSync, scanStartedAt.ToString("O", CultureInfo.InvariantCulture), cancellationToken).ConfigureAwait(false);
             return new(all.Sum(value => value.TotalDiscovered), processedThisRun, all.Sum(value => Math.Max(0, value.TotalDiscovered - value.NextOffset)), failedThisRun, indexedThisRun, latest, complete, errors);
         }
         finally { _scanLock.Release(); }
@@ -138,6 +142,10 @@ public sealed class WritingStyleCoordinator : IDisposable
         {
             var sinceText = await _repository.GetStateAsync(LastSync, cancellationToken).ConfigureAwait(false);
             var since = DateTimeOffset.TryParse(sinceText, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed) ? parsed : DateTimeOffset.MinValue;
+            // The stored cutoff can sit ahead of the index (older builds advanced it without reading mail); never trust it beyond the newest indexed message.
+            var counts = await _repository.GetCountsAsync(cancellationToken).ConfigureAwait(false);
+            if (counts.Newest is { } newestIndexed && newestIndexed < since) since = newestIndexed;
+            var syncStartedAt = DateTimeOffset.UtcNow;
             var folders = await _gateway.DiscoverSentFoldersAsync(cancellationToken).ConfigureAwait(false);
             var inserted = 0; var updated = 0; var failed = 0;
             var missingDetected = 0;
@@ -170,10 +178,11 @@ public sealed class WritingStyleCoordinator : IDisposable
                     _logger.LogWarning(ex, "Could not reconcile missing Sent items in {FolderPath}", folder.FolderPath);
                 }
             }
-            var now = DateTimeOffset.UtcNow;
-            await _repository.SetStateAsync(LastSync, now.ToString("O", CultureInfo.InvariantCulture), cancellationToken).ConfigureAwait(false);
+            // Advance the cutoff only after an error-free run, and only to the moment reading began, so failed or partial reads stay inside the next window.
+            if (errors.Count == 0)
+                await _repository.SetStateAsync(LastSync, syncStartedAt.ToString("O", CultureInfo.InvariantCulture), cancellationToken).ConfigureAwait(false);
             await _repository.RebuildRecurringBlocksAsync(cancellationToken).ConfigureAwait(false);
-            return new(inserted, updated, missingDetected, failed, now, errors);
+            return new(inserted, updated, missingDetected, failed, syncStartedAt, errors);
         }
         finally { _scanLock.Release(); }
     }
