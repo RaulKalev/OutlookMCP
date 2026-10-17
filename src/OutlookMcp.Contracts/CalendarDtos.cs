@@ -56,3 +56,22 @@ public sealed record CalendarSyncResultDto(
     [property: JsonPropertyName("failed_count")] int FailedCount,
     [property: JsonPropertyName("items")] IReadOnlyList<CalendarSyncItemDto> Items,
     [property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings);
+
+public sealed record CalendarEventDto(
+    [property: JsonPropertyName("subject")] string Subject,
+    [property: JsonPropertyName("start")] DateTimeOffset? Start,
+    [property: JsonPropertyName("end")] DateTimeOffset? End,
+    [property: JsonPropertyName("all_day")] bool AllDay,
+    [property: JsonPropertyName("location")] string? Location,
+    [property: JsonPropertyName("is_meeting")] bool IsMeeting,
+    [property: JsonPropertyName("busy_status")] string BusyStatus,
+    [property: JsonPropertyName("sensitivity")] string Sensitivity,
+    [property: JsonPropertyName("recurring")] bool Recurring,
+    [property: JsonPropertyName("body_excerpt")] string? BodyExcerpt);
+
+public sealed record CalendarReadResultDto(
+    [property: JsonPropertyName("calendar")] string Calendar,
+    [property: JsonPropertyName("window_start")] DateTimeOffset WindowStart,
+    [property: JsonPropertyName("window_end")] DateTimeOffset WindowEnd,
+    [property: JsonPropertyName("events")] IReadOnlyList<CalendarEventDto> Events,
+    [property: JsonPropertyName("skipped")] int Skipped);

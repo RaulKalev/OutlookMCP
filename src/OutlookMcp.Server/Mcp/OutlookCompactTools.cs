@@ -150,7 +150,7 @@ public sealed class OutlookCompactTools(IOutlookGateway outlook, IExchangeCalend
         CancellationToken cancellationToken = default) => executor.RunAsync(() => outlook.CreateForwardDraftAsync(
             new(message_id, store_id, body, to, cc, include_attachments, display_draft), cancellationToken));
 
-    private static (bool SearchInbox, bool SearchSent, bool SearchAll) ParseScope(string scope) =>
+    internal static (bool SearchInbox, bool SearchSent, bool SearchAll) ParseScope(string scope) =>
         scope.ToLowerInvariant() switch
         {
             "inbox_and_sent" => (true, true, false),
