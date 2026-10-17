@@ -139,7 +139,7 @@ public sealed class OutlookAssistantTools(
             if (folderId is null)
             {
                 var calendars = await outlook.ListCalendarFoldersAsync(storeId, cancellationToken).ConfigureAwait(false);
-                var chosen = calendars.FirstOrDefault(c => c.IsDefaultCalendar) ?? calendars.FirstOrDefault()
+                var chosen = calendars.FirstOrDefault(c => c.IsDefaultCalendar) ?? (calendars.Count > 0 ? calendars[0] : null)
                     ?? throw new OutlookMcpException(ErrorCodes.FolderNotFound, "No calendar folder was found.", "Run outlook_list_calendars and pass calendar_folder_id.");
                 folderId = chosen.FolderId;
                 storeId = chosen.StoreId;

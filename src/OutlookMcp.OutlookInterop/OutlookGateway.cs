@@ -1147,22 +1147,19 @@ public sealed class OutlookGateway : IOutlookGateway
             for (var index = 1; index <= (int)children.Count && result.Count < _options.MaximumRecursiveFolders; index++)
             {
                 dynamic? child = null;
+                var kept = false;
                 try
                 {
                     child = children[index];
                     if (IsFolderAllowed(SafeString(() => child.FolderPath) ?? string.Empty) && SafeInt(() => child.DefaultItemType) == 0)
                     {
                         result.Add(child);
-                        child = null;
+                        kept = true;
                     }
-                    if (recursive)
-                    {
-                        dynamic? recurseTarget = null;
-                        try { recurseTarget = children[index]; CollectMailFolders(recurseTarget, result, true, depth + 1); }
-                        finally { ComReleaseHelper.FinalRelease(recurseTarget); }
-                    }
+                    // children[index] returns the same RCW as child, so releasing a second reference would detach the kept folder.
+                    if (recursive) CollectMailFolders(child, result, true, depth + 1);
                 }
-                finally { ComReleaseHelper.FinalRelease(child); }
+                finally { if (!kept) ComReleaseHelper.FinalRelease(child); }
             }
         }
         finally { ComReleaseHelper.FinalRelease(children); }
@@ -1171,18 +1168,19 @@ public sealed class OutlookGateway : IOutlookGateway
     private void TryAddDefaultFolder(dynamic store, int folderType, bool includeSubfolders, List<dynamic> result)
     {
         dynamic? folder = null;
+        var kept = false;
         try
         {
             folder = store.GetDefaultFolder(folderType);
             if (IsFolderAllowed(SafeString(() => folder.FolderPath) ?? string.Empty))
             {
                 result.Add(folder);
+                kept = true;
                 if (includeSubfolders) CollectMailFolders(folder, result, true, 0);
-                folder = null;
             }
         }
         catch (COMException) { _logger.LogDebug("Default Outlook folder {FolderType} is unavailable for one store", folderType); }
-        finally { ComReleaseHelper.FinalRelease(folder); }
+        finally { if (!kept) ComReleaseHelper.FinalRelease(folder); }
     }
 
     private static string BuildRestrictFilter(SearchEmailsRequest request)
