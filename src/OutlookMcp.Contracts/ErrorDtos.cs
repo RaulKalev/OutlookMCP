@@ -17,6 +17,8 @@ public static class ErrorCodes
     public const string ComOperationFailed = "COM_OPERATION_FAILED";
     public const string AttachmentNotFound = "ATTACHMENT_NOT_FOUND";
     public const string AttachmentPathNotAllowed = "ATTACHMENT_PATH_NOT_ALLOWED";
+    public const string AttachmentTooLarge = "ATTACHMENT_TOO_LARGE";
+    public const string AttachmentParseFailed = "ATTACHMENT_PARSE_FAILED";
     public const string ResultLimitExceeded = "RESULT_LIMIT_EXCEEDED";
     public const string InvalidArgument = "INVALID_ARGUMENT";
     public const string OperationCancelled = "OPERATION_CANCELLED";

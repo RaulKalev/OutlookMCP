@@ -11,6 +11,7 @@ using OutlookMcp.Application.Abstractions;
 using OutlookMcp.Application.Configuration;
 using OutlookMcp.Application.Services;
 using OutlookMcp.Application.WritingStyle;
+using OutlookMcp.Infrastructure.Attachments;
 using OutlookMcp.Infrastructure.Exchange;
 using OutlookMcp.Infrastructure.WritingStyle;
 using OutlookMcp.OutlookInterop;
@@ -50,6 +51,7 @@ internal static class OutlookMcpProgram
         try
         {
             using var host = BuildHost(args, options, toolProfile);
+            DeleteStaleAttachmentScratch(host);
             if (args.Contains("--diagnose", StringComparer.OrdinalIgnoreCase)) return await DiagnoseAsync(host).ConfigureAwait(false);
             var styleExitCode = await RunStyleMaintenanceAsync(host, args).ConfigureAwait(false);
             if (styleExitCode is not null) return styleExitCode.Value;
@@ -85,6 +87,9 @@ internal static class OutlookMcpProgram
         builder.Services.AddSingleton<GraphCalendarClient>();
         builder.Services.AddSingleton<IExchangeCalendarGateway>(provider => provider.GetRequiredService<GraphCalendarClient>());
         builder.Services.AddSingleton<CalendarSyncCoordinator>();
+        builder.Services.AddSingleton(_ => new AttachmentScratchStore(AppPaths.AttachmentScratchDirectory));
+        builder.Services.AddSingleton<IAttachmentTextExtractor, AttachmentTextExtractor>();
+        builder.Services.AddSingleton<AttachmentTextService>();
         builder.Services.AddSingleton<ToolExecutor>();
         var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {
@@ -114,6 +119,19 @@ internal static class OutlookMcpProgram
             mcp.WithTools<OutlookStyleTools>(jsonOptions);
         }
         return builder.Build();
+    }
+
+    private static void DeleteStaleAttachmentScratch(IHost host)
+    {
+        try
+        {
+            var removed = host.Services.GetRequiredService<AttachmentScratchStore>().DeleteStale(TimeSpan.FromHours(1));
+            if (removed > 0) Log.Information("Removed {Count} leftover attachment scratch folder(s)", removed);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Warning(ex, "Could not clean up leftover attachment scratch folders");
+        }
     }
 
     private static OutlookMcpOptions LoadOptions()

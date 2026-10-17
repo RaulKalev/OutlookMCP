@@ -5,7 +5,20 @@ public sealed class OutlookMcpOptions
     public OutlookOptions Outlook { get; set; } = new();
     public CalendarSyncOptions CalendarSync { get; set; } = new();
     public WritingStyleOptions WritingStyle { get; set; } = new();
+    public AttachmentTextOptions AttachmentText { get; set; } = new();
     public LoggingOptions Logging { get; set; } = new();
+}
+
+public sealed class AttachmentTextOptions
+{
+    public long MaximumFileBytes { get; set; } = 30L * 1024 * 1024;
+    public int MaximumCharacters { get; set; } = 60_000;
+    public int MaximumPdfPages { get; set; } = 200;
+    public int MaximumSheets { get; set; } = 20;
+    public int MaximumCells { get; set; } = 20_000;
+    public long MaximumUncompressedBytes { get; set; } = 200L * 1024 * 1024;
+    public int MaximumCompressionRatio { get; set; } = 100;
+    public int ParseTimeoutSeconds { get; set; } = 30;
 }
 
 public sealed class OutlookOptions
@@ -86,5 +99,6 @@ public static class AppPaths
     public static string ConfigDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "EULE", "OutlookMcp");
     public static string ConfigPath => Path.Combine(ConfigDirectory, "config.json");
     public static string LogDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EULE", "OutlookMcp", "Logs");
+    public static string AttachmentScratchDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EULE", "OutlookMcp", "AttachmentScratch");
     public static string ExpandPath(string value) => Path.GetFullPath(Environment.ExpandEnvironmentVariables(value));
 }

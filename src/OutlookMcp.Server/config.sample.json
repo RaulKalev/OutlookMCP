@@ -56,6 +56,16 @@
       "OlderWeight": 0.6
     }
   },
+  "AttachmentText": {
+    "MaximumFileBytes": 31457280,
+    "MaximumCharacters": 60000,
+    "MaximumPdfPages": 200,
+    "MaximumSheets": 20,
+    "MaximumCells": 20000,
+    "MaximumUncompressedBytes": 209715200,
+    "MaximumCompressionRatio": 100,
+    "ParseTimeoutSeconds": 30
+  },
   "Logging": {
     "Level": "Information",
     "RetentionDays": 14,
