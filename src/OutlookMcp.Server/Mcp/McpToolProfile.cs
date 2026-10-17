@@ -8,6 +8,7 @@ internal enum McpToolProfile
     Compact,
     Mail,
     Style,
+    Assistant,
     Full
 }
 
@@ -28,6 +29,7 @@ internal static class McpToolProfileParser
             "compact" => McpToolProfile.Compact,
             "mail" => McpToolProfile.Mail,
             "style" => McpToolProfile.Style,
+            "assistant" => McpToolProfile.Assistant,
             "full" => McpToolProfile.Full,
             _ => throw Invalid()
         };
@@ -35,6 +37,6 @@ internal static class McpToolProfileParser
 
     private static OutlookMcpException Invalid() => new(
         ErrorCodes.InvalidArgument,
-        "--tool-profile must be compact, mail, style, or full.",
+        "--tool-profile must be compact, mail, style, assistant, or full.",
         "Choose a supported MCP tool profile and restart the server.");
 }

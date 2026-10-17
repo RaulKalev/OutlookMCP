@@ -45,7 +45,7 @@ param(
     [string]$Runtime = 'win-x64',
 
     # Advertised MCP tool set. Compact minimizes model-context and credit usage.
-    [ValidateSet('compact', 'mail', 'style', 'full')]
+    [ValidateSet('compact', 'mail', 'style', 'assistant', 'full')]
     [string]$ToolProfile = 'compact',
 
     # Rebuild from source even when an existing executable is found.

@@ -20,6 +20,9 @@
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="OutlookMcp.UnitTests" />
+  </ItemGroup>
+  <ItemGroup>
     <None Include="config.sample.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

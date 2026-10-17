@@ -104,6 +104,10 @@ internal static class OutlookMcpProgram
         {
             mcp.WithTools<OutlookStyleTools>(jsonOptions);
         }
+        else if (toolProfile is McpToolProfile.Assistant)
+        {
+            mcp.WithTools<OutlookAssistantTools>(jsonOptions);
+        }
         else
         {
             mcp.WithTools<OutlookTools>(jsonOptions);

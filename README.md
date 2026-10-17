@@ -179,7 +179,7 @@ Useful options:
 | `-ExePath <path>` | Register a specific executable (for example the x86 build) |
 | `-Rebuild` | Rebuild from source even when an installed executable exists |
 | `-Runtime win-x86` | Build the 32-bit executable when building from source |
-| `-ToolProfile compact` | Choose `compact`, `mail`, `style`, or `full`; defaults to the lowest-credit `compact` profile |
+| `-ToolProfile compact` | Choose `compact`, `mail`, `style`, `assistant`, or `full`; defaults to the lowest-credit `compact` profile |
 
 The script only registers the server; the sections under [MCP client configuration](#mcp-client-configuration) document what it writes so the same setup can be done manually.
 
@@ -288,7 +288,18 @@ Other profiles are available when a task needs them:
 | `compact` | 14 | Normal reading, drafting, and calendar sync with the lowest schema overhead |
 | `mail` | 24 | Advanced search/read options, folder moves, filing-rule learning, calendar sync, and attachment saving |
 | `style` | 11 | Writing-style index and profile maintenance only |
+| `assistant` | 16 | Unattended/scheduled agents: read-only mail incl. threads and folder listing, local calendar read, style examples and incremental Sent sync, calendar sync. No drafts, moves, folders, rules or attachment saving |
 | `full` | 35 | Every capability; default when `--tool-profile` is omitted |
+
+#### Scheduled assistant runs
+
+Scheduled or unattended agents should use the `assistant` profile. It adds what a mailbox digest needs and `compact` lacks (`outlook_get_status`, `outlook_read_thread`, `outlook_list_folders`, `outlook_read_calendar`, `outlook_style_prepare_draft_context`, `outlook_style_find_examples`, `outlook_style_sync_new_sent_emails`) and drops every tool that changes Outlook, so the mailbox stays read-only even if a prompt or an email asks for something else. Register it as a second server next to your interactive one:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install-mcp.ps1 -ServerName outlook-assistant -ToolProfile assistant -Clients claude-desktop
+```
+
+The style tools need the one-time Sent scan first (`OutlookMcp.Server.exe --style-scan`, repeat until complete).
 
 Keep `compact` configured most of the time and temporarily switch the argument to `mail`, `style`, or `full` only when that capability is needed. The profile changes only which MCP tools are advertised; server-side safety checks remain unchanged.
 
