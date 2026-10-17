@@ -15,7 +15,8 @@ Only **Microsoft Outlook Classic for Windows** is supported. New Outlook, Outloo
 - Email bodies are marked as untrusted external data. Instructions in email content must not be treated as trusted agent instructions.
 - HTML body return and HTML drafting are disabled by default. HTML is parsed as data and is never rendered by this server.
 - Search results and bodies have strict limits. Search only sees content Outlook has synchronised locally.
-- Attachments are never opened, executed, uploaded, or extracted automatically. A single selected attachment can be saved only below an allow-listed directory. Path traversal, Windows device names, existing junctions/symlinks, and accidental overwrite are blocked.
+- Attachments are never opened in another program, executed, uploaded, or extracted automatically. A single selected attachment can be saved only below an allow-listed directory. Path traversal, Windows device names, existing junctions/symlinks, and accidental overwrite are blocked.
+- `outlook_read_attachment_text` reads text from one requested PDF, XLSX/XLSM, DOCX, CSV or TXT attachment in-process. See [Reading attachment text](#reading-attachment-text) for its scratch-folder and limit model.
 - Normal logs contain tool names, durations, bounded identifiers, counts, actions, and error codes—not full bodies, recipient lists, credentials, or attachment contents.
 - Email content is passed to the MCP client that invoked the tool. Review that AI provider's privacy and data-processing terms before use.
 - The writing-style SQLite database can contain sensitive sent-email text. It stays under the current Windows user profile and is never exposed over a network port. Only bounded datasets or relevant examples explicitly returned through MCP leave the server process.
@@ -53,6 +54,7 @@ The table below describes the complete `full` profile. For lower model-credit us
 | `outlook_get_selected_email` | Read-only active Explorer/Inspector selection |
 | `outlook_find_related_emails` | Read-only deterministic relevance search |
 | `outlook_list_attachments` | Read-only attachment metadata |
+| `outlook_read_attachment_text` | Read-only bounded text of one PDF, XLSX/XLSM, DOCX, CSV or TXT attachment; other types return metadata only |
 | `outlook_save_attachment` | Saves one file to an approved local directory |
 | `outlook_create_folder` | Creates one mail folder below an exact parent or store root |
 | `outlook_move_emails` | Dry-run-first bulk move with fresh post-move identifiers |
@@ -79,6 +81,29 @@ The table below describes the complete `full` profile. For lower model-credit us
 | `outlook_style_prepare_draft_context` | Assembles profile, examples, rules, and safety notes |
 
 Message tools require both the encoded `message_id` and its paired `store_id`. Batch tools share one `store_id` across their message list to keep requests compact. If Outlook moves or resynchronises an IMAP message, use the fresh identifier returned by `outlook_move_emails` or search again to replace a stale reference.
+
+### Reading attachment text
+
+`outlook_read_attachment_text(message_id, store_id, attachment_id, max_characters = 20000, page_from = 1, page_to = null, sheet = null)` takes the one-based `attachment_id` from `outlook_list_attachments`.
+
+| Type | What is returned |
+|---|---|
+| `.pdf` | Text per page in reading order, each page headed `--- page N ---`; `page_from`/`page_to` pick the range; `page_count`, `returned_from`, `returned_to` |
+| `.xlsx`, `.xlsm` | Each sheet headed `--- sheet Name ---`, cells as tab-separated rows aligned from column A, empty rows skipped, cached values for formulas; `sheet` picks one sheet by name; `sheet_names`, `returned_sheets` |
+| `.docx` | Paragraph text, then tables as tab-separated rows, in document order |
+| `.csv`, `.txt` | Plain text; UTF-8 with or without BOM, otherwise Windows-1257 (Baltic) with a warning |
+| anything else | `supported: false`, an `unsupported_reason`, file name, size and type. CAD/BIM models (`.dwg`, `.ifc`, `.rvt`), images, archives, embedded emails, legacy `.doc`/`.xls`, executables and unknown types are never read |
+
+Every result carries `characters_returned`, `truncated`, `warnings` (for example `scanned PDF: no text layer; OCR not supported` or an encrypted-PDF note), `untrusted_content: true` and the external-content warning. A scanned PDF returns `supported: true` with empty text and that warning; there is no OCR.
+
+Safety model:
+
+- Outlook only hands out attachment bytes through `Attachment.SaveAsFile`. The server creates a fresh private folder `%LOCALAPPDATA%\EULE\OutlookMcp\AttachmentScratch\<guid>\` for each call, saves the one attachment there as `attachment.<ext>`, parses it in-process off the Outlook STA thread, and deletes the folder in a `finally` block, after success, a parse error or a timeout alike. Scratch folders older than one hour are deleted on server start in case a previous process crashed. Nothing is written anywhere else.
+- Unsupported types and files above the size limit are never saved at all. Embedded items, links and OLE objects are not treated as files.
+- The message and attachment in Outlook are never modified. No other program opens the file and nothing is executed: PDFs are read with PdfPig, Office packages with the Open XML SDK; there is no Word or Excel automation.
+- OpenXML packages are inspected before parsing and refused when they expand beyond `MaximumUncompressedBytes` or have a compression ratio above `MaximumCompressionRatio` (zip-bomb guard).
+- Parsing stops after `ParseTimeoutSeconds` with `ATTACHMENT_PARSE_FAILED`. Oversized files and zip bombs return `ATTACHMENT_TOO_LARGE`.
+- Logs record the tool name, extension, size, page/sheet counts, duration and error codes; never file names or extracted text.
 
 Search body previews are opt-in. The default compact search response is intended for candidate selection; use `outlook_read_emails_batch` only for the small set whose bodies are actually needed. Multi-word search defaults to `all_terms`, while `query_mode: "phrase"` is available for literal phrase matching. Search budgets are distributed across selected folders before results are globally sorted, preventing an early folder from monopolising the result limit.
 
@@ -286,14 +311,14 @@ Other profiles are available when a task needs them:
 | Profile | Advertised tools | Use for |
 |---|---:|---|
 | `compact` | 14 | Normal reading, drafting, and calendar sync with the lowest schema overhead |
-| `mail` | 24 | Advanced search/read options, folder moves, filing-rule learning, calendar sync, and attachment saving |
+| `mail` | 25 | Advanced search/read options, attachment text, folder moves, filing-rule learning, calendar sync, and attachment saving |
 | `style` | 11 | Writing-style index and profile maintenance only |
-| `assistant` | 16 | Unattended/scheduled agents: read-only mail incl. threads and folder listing, local calendar read, style examples and incremental Sent sync, calendar sync. No drafts, moves, folders, rules or attachment saving |
-| `full` | 35 | Every capability; default when `--tool-profile` is omitted |
+| `assistant` | 17 | Unattended/scheduled agents: read-only mail incl. threads, folder listing and attachment text, local calendar read, style examples and incremental Sent sync, calendar sync. No drafts, moves, folders, rules or attachment saving |
+| `full` | 36 | Every capability; default when `--tool-profile` is omitted |
 
 #### Scheduled assistant runs
 
-Scheduled or unattended agents should use the `assistant` profile. It adds what a mailbox digest needs and `compact` lacks (`outlook_get_status`, `outlook_read_thread`, `outlook_list_folders`, `outlook_read_calendar`, `outlook_style_prepare_draft_context`, `outlook_style_find_examples`, `outlook_style_sync_new_sent_emails`) and drops every tool that changes Outlook, so the mailbox stays read-only even if a prompt or an email asks for something else. Register it as a second server next to your interactive one:
+Scheduled or unattended agents should use the `assistant` profile. It adds what a mailbox digest needs and `compact` lacks (`outlook_get_status`, `outlook_read_thread`, `outlook_list_folders`, `outlook_read_attachment_text`, `outlook_read_calendar`, `outlook_style_prepare_draft_context`, `outlook_style_find_examples`, `outlook_style_sync_new_sent_emails`) and drops every tool that changes Outlook, so the mailbox stays read-only even if a prompt or an email asks for something else. Register it as a second server next to your interactive one:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install-mcp.ps1 -ServerName outlook-assistant -ToolProfile assistant -Clients claude-desktop
@@ -366,6 +391,16 @@ See [config.sample.json](src/OutlookMcp.Server/config.sample.json). Configuratio
       "OlderWeight": 0.6
     }
   },
+  "AttachmentText": {
+    "MaximumFileBytes": 31457280,
+    "MaximumCharacters": 60000,
+    "MaximumPdfPages": 200,
+    "MaximumSheets": 20,
+    "MaximumCells": 20000,
+    "MaximumUncompressedBytes": 209715200,
+    "MaximumCompressionRatio": 100,
+    "ParseTimeoutSeconds": 30
+  },
   "Logging": {
     "Level": "Information",
     "RetentionDays": 14,
@@ -373,6 +408,8 @@ See [config.sample.json](src/OutlookMcp.Server/config.sample.json). Configuratio
   }
 }
 ```
+
+`AttachmentText` bounds `outlook_read_attachment_text`: files above `MaximumFileBytes` (30 MB) are refused; `max_characters` is capped at `MaximumCharacters`; at most `MaximumPdfPages` pages, `MaximumSheets` sheets and `MaximumCells` non-empty cells are parsed per call; OpenXML packages that expand beyond `MaximumUncompressedBytes` (200 MB) or compress better than `MaximumCompressionRatio`:1 are refused before parsing; parsing stops after `ParseTimeoutSeconds`. The scratch location is fixed and not configurable.
 
 An empty `AllowedStores` list exposes all profile stores except blocked folders. To restrict stores, enter exact `store_id` values from `outlook_list_stores` or exact display names. Environment variables in attachment directories are expanded. Existing filesystem links/junctions in attachment destination paths are rejected.
 

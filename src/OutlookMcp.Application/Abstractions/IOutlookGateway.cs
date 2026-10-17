@@ -17,6 +17,7 @@ public interface IOutlookGateway : IAsyncDisposable
     Task<IReadOnlyList<RelatedEmailDto>> FindRelatedEmailsAsync(RelatedEmailsRequest request, CancellationToken cancellationToken);
     Task<IReadOnlyList<AttachmentDto>> ListAttachmentsAsync(string messageId, string storeId, CancellationToken cancellationToken);
     Task<SavedAttachmentDto> SaveAttachmentAsync(SaveAttachmentRequest request, CancellationToken cancellationToken);
+    Task<AttachmentScratchFileDto> SaveAttachmentToScratchAsync(AttachmentScratchRequest request, CancellationToken cancellationToken);
     Task<DraftDto> CreateDraftAsync(CreateDraftRequest request, CancellationToken cancellationToken);
     Task<DraftDto> CreateReplyDraftAsync(CreateReplyDraftRequest request, CancellationToken cancellationToken);
     Task<DraftDto> CreateForwardDraftAsync(CreateForwardDraftRequest request, CancellationToken cancellationToken);

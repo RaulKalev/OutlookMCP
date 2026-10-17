@@ -33,6 +33,15 @@ public static class OutlookMcpOptionsValidator
         ValidateWeight(options.WritingStyle.RecencyWeighting.RecentWeight, "RecentWeight");
         ValidateWeight(options.WritingStyle.RecencyWeighting.MiddleWeight, "MiddleWeight");
         ValidateWeight(options.WritingStyle.RecencyWeighting.OlderWeight, "OlderWeight");
+        var attachmentText = options.AttachmentText;
+        if (attachmentText.MaximumFileBytes is < 1_024 or > 200L * 1024 * 1024) throw Invalid("AttachmentText.MaximumFileBytes must be between 1024 and 209715200.");
+        if (attachmentText.MaximumCharacters is < 1_000 or > 500_000) throw Invalid("AttachmentText.MaximumCharacters must be between 1000 and 500000.");
+        if (attachmentText.MaximumPdfPages is < 1 or > 2_000) throw Invalid("AttachmentText.MaximumPdfPages must be between 1 and 2000.");
+        if (attachmentText.MaximumSheets is < 1 or > 200) throw Invalid("AttachmentText.MaximumSheets must be between 1 and 200.");
+        if (attachmentText.MaximumCells is < 100 or > 1_000_000) throw Invalid("AttachmentText.MaximumCells must be between 100 and 1000000.");
+        if (attachmentText.MaximumUncompressedBytes < attachmentText.MaximumFileBytes || attachmentText.MaximumUncompressedBytes > 2L * 1024 * 1024 * 1024) throw Invalid("AttachmentText.MaximumUncompressedBytes must be between MaximumFileBytes and 2147483648.");
+        if (attachmentText.MaximumCompressionRatio is < 2 or > 1_000) throw Invalid("AttachmentText.MaximumCompressionRatio must be between 2 and 1000.");
+        if (attachmentText.ParseTimeoutSeconds is < 1 or > 300) throw Invalid("AttachmentText.ParseTimeoutSeconds must be between 1 and 300.");
         if (options.Logging.RetentionDays is < 1 or > 365) throw Invalid("Logging.RetentionDays must be between 1 and 365.");
         return options;
     }

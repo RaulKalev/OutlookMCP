@@ -210,6 +210,7 @@ public sealed class WritingStyleCoordinatorTests : IDisposable
         public Task<IReadOnlyList<RelatedEmailDto>> FindRelatedEmailsAsync(RelatedEmailsRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<IReadOnlyList<AttachmentDto>> ListAttachmentsAsync(string messageId, string storeId, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<SavedAttachmentDto> SaveAttachmentAsync(SaveAttachmentRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<AttachmentScratchFileDto> SaveAttachmentToScratchAsync(AttachmentScratchRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<DraftDto> CreateDraftAsync(CreateDraftRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<DraftDto> CreateReplyDraftAsync(CreateReplyDraftRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<DraftDto> CreateForwardDraftAsync(CreateForwardDraftRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
