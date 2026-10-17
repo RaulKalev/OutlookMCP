@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Logging.Abstractions;
 using OutlookMcp.Application.Abstractions;
 using OutlookMcp.Application.Configuration;
@@ -69,6 +70,59 @@ public sealed class WritingStyleCoordinatorTests : IDisposable
     }
 
     [Fact]
+    public async Task Sync_IndexesMailSentAfterCompletedScanEvenAfterMaintenanceRescan()
+    {
+        using var fixture = CreateFixture();
+        await fixture.Coordinator.ScanAsync(10, 10, false, true, default);
+        await Task.Delay(30);
+        fixture.Gateway.AddMessage("four", "Uus teema", "Tere\n\nSaadan uue vastuse.\n\nLugupidamisega\nRaul", "mari@example.com");
+        await Task.Delay(30);
+
+        var rescan = await fixture.Coordinator.ScanAsync(10, 10, false, true, default);
+        Assert.True(rescan.Complete);
+        Assert.Equal(0, rescan.ProcessedInThisRun);
+
+        var sync = await fixture.Coordinator.SyncAsync(default);
+        Assert.Equal(1, sync.NewMessagesIndexed);
+    }
+
+    [Fact]
+    public async Task Sync_DoesNotAdvanceCutoffPastUnreadMailWhenFolderReadsFail()
+    {
+        using var fixture = CreateFixture();
+        await fixture.Coordinator.ScanAsync(10, 10, false, true, default);
+        await Task.Delay(30);
+        fixture.Gateway.AddMessage("four", "Uus teema", "Tere\n\nSaadan uue vastuse.\n\nLugupidamisega\nRaul", "mari@example.com");
+        await Task.Delay(30);
+
+        fixture.Gateway.FailBatchReads = true;
+        var failed = await fixture.Coordinator.SyncAsync(default);
+        Assert.NotEmpty(failed.Errors);
+        Assert.Equal(0, failed.NewMessagesIndexed);
+
+        fixture.Gateway.FailBatchReads = false;
+        var recovered = await fixture.Coordinator.SyncAsync(default);
+        Assert.Equal(1, recovered.NewMessagesIndexed);
+    }
+
+    [Fact]
+    public async Task Sync_RecoversWhenStoredCutoffOutrunsTheIndex()
+    {
+        using var fixture = CreateFixture();
+        await fixture.Coordinator.ScanAsync(10, 10, false, true, default);
+        await Task.Delay(30);
+        fixture.Gateway.AddMessage("four", "Uus teema", "Tere\n\nSaadan uue vastuse.\n\nLugupidamisega\nRaul", "mari@example.com");
+        await fixture.Repository.SetStateAsync("last_sync", DateTimeOffset.UtcNow.AddDays(1).ToString("O", CultureInfo.InvariantCulture), default);
+
+        var sync = await fixture.Coordinator.SyncAsync(default);
+        Assert.Equal(1, sync.NewMessagesIndexed);
+
+        var healed = await fixture.Repository.GetStateAsync("last_sync", default);
+        Assert.NotNull(healed);
+        Assert.True(DateTimeOffset.Parse(healed, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind) <= DateTimeOffset.UtcNow);
+    }
+
+    [Fact]
     public async Task Sync_ReconcilesMissingSentEntryIdsWithoutReadingBodiesAgain()
     {
         using var fixture = CreateFixture();
@@ -108,20 +162,25 @@ public sealed class WritingStyleCoordinatorTests : IDisposable
     private sealed class FakeGateway : IOutlookGateway
     {
         private readonly SentFolderDescriptorDto _folder = new("store", "Test", "sent", "\\Test\\Sent", 3, "test");
-        private readonly SentEmailSourceDto[] _messages =
+        private readonly List<SentEmailSourceDto> _messages =
         [
             Message("one", "ABC-123 kooskõlastus", "Tere Kaur\n\nPalun kinnita ABC-123 lahendus.\n\nLugupidamisega\nRaul", "kaur@example.com"),
             Message("two", "Koosolek", "Tere\n\nKohtume homme kell 10.\n\nLugupidamisega\nRaul", "mari@example.com"),
             Message("three", "Re: ABC-123 kooskõlastus", "Tere Kaur\n\nPalun kinnita ABC-123 lahendus.\n\nFrom: Kaur\nVana kiri", "kaur@example.com")
         ];
         public string? MissingEntryId { get; set; }
+        public bool FailBatchReads { get; set; }
 
-        public Task<IReadOnlyList<SentFolderDescriptorDto>> DiscoverSentFoldersAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<SentFolderDescriptorDto>>([_folder]);
+        public void AddMessage(string id, string subject, string body, string recipient) => _messages.Add(Message(id, subject, body, recipient));
+
+        public Task<IReadOnlyList<SentFolderDescriptorDto>> DiscoverSentFoldersAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<SentFolderDescriptorDto>>([_folder with { TotalItems = _messages.Count }]);
         public Task<SentEmailBatchDto> ReadSentFolderBatchAsync(string storeId, string folderId, int startOffset, int batchSize, DateTimeOffset? modifiedSince, CancellationToken cancellationToken)
         {
-            var items = _messages.Skip(startOffset).Take(batchSize).ToArray();
+            if (FailBatchReads) throw new InvalidOperationException("Simulated Outlook read failure.");
+            var source = modifiedSince is null ? _messages : _messages.Where(value => value.LastModifiedAt >= modifiedSince).ToList();
+            var items = source.Skip(startOffset).Take(batchSize).ToArray();
             var next = startOffset + items.Length;
-            return Task.FromResult(new SentEmailBatchDto(_folder, startOffset, next, _messages.Length, items, next >= _messages.Length));
+            return Task.FromResult(new SentEmailBatchDto(_folder, startOffset, next, source.Count, items, next >= source.Count));
         }
 
         public Task<SentEmailReferenceBatchDto> ReadSentFolderReferencesBatchAsync(string storeId, string folderId, int startOffset, int batchSize, CancellationToken cancellationToken)
