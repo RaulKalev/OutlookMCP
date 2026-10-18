@@ -21,9 +21,47 @@ internal sealed class OutlookSession : IDisposable
 
     public bool IsInstalled => Type.GetTypeFromProgID("Outlook.Application", throwOnError: false) is not null;
 
+    /// <summary>
+    /// HRESULTs meaning the out-of-process Outlook server behind a cached proxy is gone,
+    /// typically because Outlook was closed or restarted after this session connected.
+    /// </summary>
+    private static readonly HashSet<int> DisconnectedHResults =
+    [
+        unchecked((int)0x800706BA), // RPC_S_SERVER_UNAVAILABLE
+        unchecked((int)0x800706BE), // RPC_S_CALL_FAILED
+        unchecked((int)0x800706BF), // RPC_S_CALL_FAILED_DNE
+        unchecked((int)0x80010108), // RPC_E_DISCONNECTED
+        unchecked((int)0x80010007), // RPC_E_SERVER_DIED
+        unchecked((int)0x80010012), // RPC_E_SERVER_DIED_DNE
+        unchecked((int)0x800401FD), // CO_E_OBJNOTCONNECTED
+    ];
+
+    public static bool IsDisconnected(Exception? exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is COMException com && DisconnectedHResults.Contains(com.HResult)) return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>Drops a dead session without quitting Outlook so the next call reconnects.</summary>
+    public void Invalidate()
+    {
+        try { ReleaseSession(); }
+        catch (Exception ex) when (ex is COMException or InvalidComObjectException) { _namespace = null; _application = null; }
+        _startedByServer = false;
+    }
+
     public void EnsureConnected()
     {
-        if (_application is not null && _namespace is not null) return;
+        if (_application is not null && _namespace is not null)
+        {
+            if (IsAlive()) return;
+            Invalidate();
+        }
+
         var outlookType = Type.GetTypeFromProgID("Outlook.Application", throwOnError: false)
             ?? throw new OutlookMcpException(ErrorCodes.OutlookNotInstalled, "Microsoft Outlook Classic is not installed or its COM registration is unavailable.", "Install or repair Outlook Classic for Windows. New Outlook is not supported.");
 
@@ -71,6 +109,17 @@ internal sealed class OutlookSession : IDisposable
         }
 
         ReleaseSession();
+    }
+
+    private bool IsAlive()
+    {
+        try
+        {
+            _ = _namespace!.CurrentProfileName;
+            return true;
+        }
+        catch (Exception ex) when (IsDisconnected(ex) || ex is InvalidComObjectException) { return false; }
+        catch (COMException) { return true; }
     }
 
     private void ReleaseSession()

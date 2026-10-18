@@ -1952,9 +1952,15 @@ public sealed class OutlookGateway : IOutlookGateway
         _logger.LogInformation("Starting Outlook tool {ToolName}", operation);
         try
         {
-            var result = await _dispatcher.InvokeAsync(action, cancellationToken).ConfigureAwait(false);
+            var result = await _dispatcher.InvokeAsync(() => RunOnLiveSession(action), cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("Completed Outlook tool {ToolName} in {ElapsedMilliseconds} ms", operation, stopwatch.ElapsedMilliseconds);
             return result;
+        }
+        catch (Exception ex) when (OutlookSession.IsDisconnected(ex))
+        {
+            // Not retried: a write may have reached Outlook before the connection dropped.
+            _logger.LogWarning(ex, "Outlook disconnected during {ToolName} after {ElapsedMilliseconds} ms; the next call reconnects", operation, stopwatch.ElapsedMilliseconds);
+            throw new OutlookMcpException(ErrorCodes.OutlookNotAvailable, "The connection to Outlook was lost, probably because Outlook was closed or restarted.", "Retry; the server reconnects to the running Outlook automatically.", ex);
         }
         catch (OutlookMcpException ex)
         {
@@ -1965,6 +1971,17 @@ public sealed class OutlookGateway : IOutlookGateway
         {
             _logger.LogError(ex, "Outlook COM operation {ToolName} failed after {ElapsedMilliseconds} ms", operation, stopwatch.ElapsedMilliseconds);
             throw new OutlookMcpException(ErrorCodes.ComOperationFailed, "Outlook could not complete the requested operation.", "Retry after Outlook is responsive; run --diagnose if the problem continues.", ex);
+        }
+    }
+
+    /// <summary>Runs on the STA thread; a dead Outlook proxy is dropped there so the next call reconnects.</summary>
+    private T RunOnLiveSession<T>(Func<T> action)
+    {
+        try { return action(); }
+        catch (Exception ex) when (OutlookSession.IsDisconnected(ex))
+        {
+            _session.Invalidate();
+            throw;
         }
     }
 

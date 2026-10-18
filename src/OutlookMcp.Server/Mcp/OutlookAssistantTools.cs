@@ -27,7 +27,7 @@ public sealed class OutlookAssistantTools(
     OutlookMcpOptions options,
     ToolExecutor executor)
 {
-    private const int MaximumCalendarDays = 14;
+    private const int MaximumCalendarDays = 180;
     private const int CalendarBodyExcerptCharacters = 600;
 
     [McpServerTool(Name = "outlook_get_status"), Description("Check that Outlook Classic is running and MAPI is ready. Call first. Read-only.")]
@@ -137,7 +137,7 @@ public sealed class OutlookAssistantTools(
 
     [McpServerTool(Name = "outlook_read_calendar"), Description("Read local calendar events (recurrences expanded) from now through the next days. Private items are returned without body. Read-only.")]
     public Task<ToolResponse<CalendarReadResultDto>> ReadCalendar(
-        [Description("Days ahead of today, 1-14; default 2 (today and tomorrow).")] int days_ahead = 2,
+        [Description("Days ahead of today, 1-180; default 2 (today and tomorrow).")] int days_ahead = 2,
         [Description("Optional calendar folder_id from outlook_list_calendars; defaults to the configured sync source or the default calendar.")] string? calendar_folder_id = null,
         string? store_id = null,
         bool include_body_excerpt = false,
@@ -145,7 +145,7 @@ public sealed class OutlookAssistantTools(
         {
             if (days_ahead < 1 || days_ahead > MaximumCalendarDays)
             {
-                throw new OutlookMcpException(ErrorCodes.InvalidArgument, "days_ahead must be between 1 and 14.", "Correct the request parameters and retry.");
+                throw new OutlookMcpException(ErrorCodes.InvalidArgument, $"days_ahead must be between 1 and {MaximumCalendarDays}.", "Correct the request parameters and retry.");
             }
 
             var folderId = FirstNonEmpty(calendar_folder_id, options.CalendarSync.SourceCalendarFolderId);
